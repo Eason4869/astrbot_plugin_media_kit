@@ -27,15 +27,6 @@ _✨ 自动解析流媒体平台链接，转换为媒体直链发送 ✨_
 - 💧 **修复小红书移动端水印**：移动端分享链接解析结果不再带水印
 - 🔁 **其余能力同步主仓库**：B站 Cookie 高画质解析与管理员协助登录、媒体中转模式、下载器重写、全平台解析器重写、配置管理器重写等
 
-示意卡片：
-
-<p align="center">
-  <img src="docs/images/card_standard.jpg" width="48%" alt="标准布局卡片">
-  <img src="docs/images/card_immersive.jpg" width="48%" alt="沉浸式布局卡片">
-</p>
-
-> 卡片渲染移植自 [astrbot_plugin_rika_share](https://github.com/iris1598/astrbot_plugin_rika_share)（MIT License），其底层基于 [nonebot-plugin-parser](https://github.com/maoxig/nonebot-plugin-parser) 的 CommonRenderer，保留原始许可声明。
-
 ---
 
 ## 📺 支持的流媒体平台
