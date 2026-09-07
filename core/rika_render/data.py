@@ -93,6 +93,8 @@ class ParseResult:
     extra: dict[str, Any] = field(default_factory=dict)
     repost: ParseResult | None = None
     render_image: Path | None = None
+    # 强制主视觉封面（如 Steam 游戏封面横幅），优先级高于视频封面与图集首图
+    hero_cover: PathTask | None = None
 
     @property
     def header(self) -> str | None:

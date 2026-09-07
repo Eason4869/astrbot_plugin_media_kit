@@ -159,6 +159,13 @@ def build_parse_result(
     file_paths = metadata.get("file_paths") or []
     video_count = metadata.get("video_count", len(video_urls))
 
+    # 卡片主视觉封面（如 Steam 游戏封面）：最高优先级
+    card_cover_task = _as_download_path_task(
+        _normalize_urls(metadata.get("card_cover_urls")),
+        save_path,
+        metadata,
+    )
+
     # 封面：优先已下载的封面路径，其次 video_cover_urls，其次视频首帧路径
     cover_path = metadata.get("_cover_path") or metadata.get("cover_path")
     cover_task = _as_local_path_task(cover_path)
@@ -168,6 +175,9 @@ def build_parse_result(
             save_path,
             metadata,
         )
+
+    # 强制封面存在时，卡片主视觉使用游戏封面
+    hero_cover_task = card_cover_task or cover_task
 
     duration_ms = metadata.get("timelength_ms")
     try:
@@ -204,14 +214,14 @@ def build_parse_result(
             image_contents.append(ImageContent(path_task=task))
 
     if is_video:
-        # 视频：只需封面做 hero
-        video_task = cover_task
+        # 视频：只需封面做 hero（强制封面优先）
+        video_task = hero_cover_task
         if video_task is None and image_contents:
             video_task = image_contents[0].path_task
         contents.append(
             VideoContent(
                 path_task=video_task,
-                cover=cover_task,
+                cover=hero_cover_task,
                 duration=duration,
             )
         )
@@ -254,4 +264,5 @@ def build_parse_result(
         contents=contents,
         graphics=graphics,
         extra=extra,
+        hero_cover=card_cover_task,
     )

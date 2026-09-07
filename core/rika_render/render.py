@@ -775,16 +775,19 @@ class ShareCardRenderer:
 
     async def _collect_images(self, result: ParseResult) -> dict[str, Any]:
         """并发获取头像 / 视频封面 / 图集图片的本地路径。"""
-        images: dict[str, Any] = {"avatar": None, "hero": None, "grid": []}
+        images: dict[str, Any] = {"avatar": None, "hero": None, "grid": [], "hero_forced": False}
 
         tasks: list[tuple[str, PathTask]] = []
         if result.author and result.author.avatar:
             tasks.append(("avatar", result.author.avatar))
 
         video = result.video
-        hero_task: PathTask | None = None
-        if video is not None and video.cover is not None:
+        # 主视觉优先级：强制封面（hero_cover） > 视频封面
+        hero_task: PathTask | None = result.hero_cover
+        hero_forced = hero_task is not None
+        if hero_task is None and video is not None and video.cover is not None:
             hero_task = video.cover
+        if hero_task is not None:
             tasks.append(("hero", hero_task))
 
         grid_tasks: list[PathTask] = []
@@ -798,7 +801,7 @@ class ShareCardRenderer:
                 seen.add(id(g.path_task))
                 grid_tasks.append(g.path_task)
 
-        # 图集中可能已包含视频封面，去重后单独取封面
+        # 图集中可能已包含视频/强制封面，去重后单独取封面
         hero_id = id(hero_task) if hero_task else None
         for t in grid_tasks:
             if id(t) == hero_id:
@@ -811,6 +814,7 @@ class ShareCardRenderer:
         results = await asyncio.gather(
             *[t.safe_get() for _, t in tasks], return_exceptions=True
         )
+        hero_path: Path | None = None
         for (kind, _), path in zip(tasks, results):
             if not path:
                 continue
@@ -818,8 +822,13 @@ class ShareCardRenderer:
                 images["avatar"] = path
             elif kind == "hero":
                 images["hero"] = path
+                hero_path = path
             else:
                 images["grid"].append(path)
+        images["hero_forced"] = hero_forced
+        # 图集中与主视觉同源（不同 PathTask 但同一文件）的图片去重
+        if hero_path is not None:
+            images["grid"] = [p for p in images["grid"] if p != hero_path]
         # 封面下载失败时使用内置兜底背景图
         if images["hero"] is None and hero_task is not None and _FALLBACK_BG_PATH.is_file():
             images["hero"] = _FALLBACK_BG_PATH

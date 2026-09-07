@@ -261,17 +261,24 @@ class SteamParser(BaseVideoParser):
 
         return video_groups, self._unique_keep_order(image_urls)
 
+    def _extract_game_cover(self, game: Dict[str, Any]) -> Optional[str]:
+        """提取游戏封面（商店页横幅图 header_image），用于卡片主视觉。"""
+        for key in ("header_image", "capsule_image", "capsule_image_v5"):
+            image = self._normalize_url(game.get(key))
+            if image:
+                return image
+        return None
+
     def _extract_media(
         self, game: Dict[str, Any]
-    ) -> Tuple[List[List[str]], List[List[str]], List[List[str]]]:
-        """从 Steam 详情字段提取视频、视频封面和图片。"""
+    ) -> Tuple[List[List[str]], List[List[str]], List[List[str]], Optional[str]]:
+        """从 Steam 详情字段提取视频、视频封面、图片和游戏封面。"""
         video_items: List[Tuple[List[str], List[str]]] = []
         image_urls: List[str] = []
 
-        for key in ("header_image", "capsule_image"):
-            image = self._normalize_url(game.get(key))
-            if image:
-                image_urls.append(image)
+        game_cover = self._extract_game_cover(game)
+        if game_cover:
+            image_urls.append(game_cover)
 
         screenshots = game.get("screenshots")
         if isinstance(screenshots, list):
@@ -329,7 +336,7 @@ class SteamParser(BaseVideoParser):
             unique_video_urls.append(normalized_candidates)
             unique_video_covers.append(self._unique_keep_order(covers))
         unique_images = [[image] for image in self._unique_keep_order(image_urls)]
-        return unique_video_urls, unique_video_covers, unique_images
+        return unique_video_urls, unique_video_covers, unique_images, game_cover
 
     @staticmethod
     def _extract_genres(game: Dict[str, Any]) -> str:
@@ -419,6 +426,12 @@ class SteamParser(BaseVideoParser):
         result["url"] = url
         result["source_url"] = url
         result["steam_appid"] = appid
+        # 小黑盒游戏路径的图片首项即为游戏封面横幅，强制用作卡片主视觉
+        cover_images = result.get("image_urls") or []
+        if cover_images and isinstance(cover_images[0], list) and cover_images[0]:
+            result["card_cover_urls"] = [list(cover_images[0])]
+        else:
+            result["card_cover_urls"] = []
         result["use_image_proxy"] = self.use_image_proxy
         result["use_video_proxy"] = self.use_video_proxy
         result["proxy_url"] = (
@@ -445,7 +458,7 @@ class SteamParser(BaseVideoParser):
             if not name:
                 raise RuntimeError("Steam API 未返回游戏名称")
             description, release_date = self._build_description(game)
-            video_urls, video_cover_urls, image_urls = self._extract_media(game)
+            video_urls, video_cover_urls, image_urls, game_cover = self._extract_media(game)
             canonical_url = f"https://store.steampowered.com/app/{appid}/"
             result: MediaMetadata = {
                 "url": url,
@@ -458,6 +471,8 @@ class SteamParser(BaseVideoParser):
                 "video_urls": video_urls,
                 "video_cover_urls": video_cover_urls,
                 "image_urls": image_urls,
+                # 强制卡片使用游戏封面（header 横幅）作为主视觉
+                "card_cover_urls": [[game_cover]] if game_cover else [],
                 "image_headers": build_request_headers(
                     is_video=False, referer=canonical_url
                 ),

@@ -54,6 +54,10 @@ async def render_card_rika(
         _a = str(metadata.get("avatar_url") or "")
         if _a:
             parts.append("a:" + _a)
+        _card_covers = metadata.get("card_cover_urls") or []
+        if _card_covers:
+            _cc = _card_covers[0]
+            parts.append("cc:" + str(_cc[0] if isinstance(_cc, list) else _cc))
         _covers = metadata.get("video_cover_urls") or []
         if _covers:
             _c = _covers[0]

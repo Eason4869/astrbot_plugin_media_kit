@@ -26,6 +26,8 @@ class MediaMetadata(TypedDict, total=False):
     video_cover_urls: List[List[str]]
     video_cover_url_lists: List[List[str]]
     image_urls: List[List[str]]
+    # 卡片主视觉封面（强制渲染为卡片横幅，如 Steam 游戏封面）
+    card_cover_urls: List[List[str]]
     image_headers: Dict[str, str]
     video_headers: Dict[str, str]
     video_force_download: bool
