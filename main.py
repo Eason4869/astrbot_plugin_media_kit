@@ -50,7 +50,7 @@ from .core.arbiter import (
     "astrbot_plugin_media_kit",
     "Eason4869",
     "媒体解析工具箱 - 聚合解析流媒体平台链接，转换为媒体直链发送",
-    "7.1.0",
+    "1.0.0",
 )
 class VideoParserPlugin(Star):
     def __init__(self, context: Context, config: dict):
