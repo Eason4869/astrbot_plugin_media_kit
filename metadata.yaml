@@ -1,0 +1,25 @@
+name: astrbot_plugin_media_kit
+display_name: "媒体解析工具箱"
+short_desc: 媒体解析工具箱 - 聚合解析流媒体平台链接，转换为媒体直链发送
+desc: |
+  # 媒体解析工具箱
+
+  自动解析 B站、抖音、快手、微博、小红书、闲鱼、今日头条、小黑盒、Steam、Twitter/X、Pixiv 等流媒体平台链接，转换为媒体直链发送。
+
+  ## 特色
+
+  - 🎴 rika 风格卡片渲染：四种布局、深/浅主题、统计药丸、BV 号简洁展示、封面失败自动兜底
+  - 🤖 群聊贴表情仲裁：多 Bot 同群时自动竞争解析权，避免重复解析；贴表情反馈解析状态
+  - 💧 修复小红书移动端水印
+  - 🍪 B站 Cookie 高画质解析与管理员协助登录
+  - 🔁 媒体中转模式、消息打包、文本翻译、热评
+version: v7.1.0
+astrbot_version: ">=4.25.0"
+author: Eason4869
+repo: https://github.com/Eason4869/astrbot_plugin_media_kit
+social_link: https://github.com/Eason4869
+tags:
+  - 视频解析
+  - 媒体解析
+  - bilibili
+  - 卡片渲染
