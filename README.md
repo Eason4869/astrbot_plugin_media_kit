@@ -9,7 +9,7 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 [![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-orange.svg)](https://github.com/AstrBotDevs/AstrBot)
-[![Version](https://img.shields.io/badge/Version-v1.0.1-green.svg)](https://github.com/Eason4869/astrbot_plugin_media_kit)
+[![Version](https://img.shields.io/badge/Version-v1.0.2-green.svg)](https://github.com/Eason4869/astrbot_plugin_media_kit)
 
 </div>
 
@@ -149,7 +149,13 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 - **多 Bot 仲裁**：同一条链接被群内多个支持该协议的机器人同时看到时，机器人之间通过固定表情（占坑、胜出确认）的点赞列表做弱一致仲裁，最终只有一个机器人解析并发送，避免重复刷屏。仲裁顺序按消息时间片确定性轮转，所有机器人结论一致；该协议与 [astrbot_plugin_parser](https://github.com/Zhalslar/astrbot_plugin_parser) 兼容，不同插件的机器人同群也能互相仲裁。
 - **状态反馈**：识别到链接即贴占坑表情（已接手），解析成功贴成功表情，解析失败贴失败表情，方便判断机器人是否在运行。
 
-无需配置，仅在协议端支持 `set_msg_emoji_like` / `fetch_emoji_like` 的群聊中自动生效；私聊、其他平台或不支持的协议端自动跳过，不影响解析。
+默认开启，仅在协议端支持 `set_msg_emoji_like` / `fetch_emoji_like` 的群聊中自动生效；私聊、其他平台或不支持的协议端自动跳过，不影响解析。
+
+可在 `贴表情反馈与多 Bot 仲裁` 配置项中分别控制：
+
+- `启用多 Bot 贴表情仲裁`：关闭后本插件不再参与贴表情仲裁（只靠协议端/其他仲裁逻辑避免重复解析）。占用表情 289/124 是跨插件协议的一部分，**不可修改**，否则会与 astrbot_plugin_parser 的机器人失配。
+- `启用成功/失败状态贴图`：控制解析成功/失败时是否贴状态表情。
+- `成功表情 ID` / `失败表情 ID`：可自定义成你的协议端贴表情面板中存在且语义合适的表情 ID（默认 ✅=324、❌=336）。若协议端不支持某个表情，会被静默忽略、不影响解析。
 
 ---
 

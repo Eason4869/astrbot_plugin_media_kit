@@ -28,6 +28,8 @@ class Config:
     PARSER_MAX_CONCURRENT = 10
     
     PLUGIN_NAME = "astrbot_plugin_media_kit"
+    # 插件版本：main.py 注册与 metadata.yaml 均以此为准，测试会校验一致性
+    PLUGIN_VERSION = "1.0.2"
     CACHE_DIR_NAME = "cache"
     RUNTIME_DIR_NAME = "runtime_manager"
     DEFAULT_CACHE_DIR = "/app/sharedFolder/video_parser/cache"

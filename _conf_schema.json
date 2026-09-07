@@ -932,5 +932,36 @@
                 "default": false
             }
         }
+    },
+    "emoji_feedback": {
+        "description": "贴表情反馈与多 Bot 仲裁",
+        "type": "object",
+        "hint": "在 aiocqhttp（OneBot v11，如 NapCat/Lagrange）群聊中贴表情：仲裁用固定表情 289/124，与 astrbot_plugin_parser 互通，不可修改；成功/失败反馈表情可自定义，若协议端不支持则静默忽略。",
+        "items": {
+            "arbitration_enabled": {
+                "description": "启用多 Bot 贴表情仲裁",
+                "type": "bool",
+                "hint": "同一条链接被多个支持该协议的 Bot 看到时，通过固定表情竞争解析权，只有一个 Bot 解析；协议与 astrbot_plugin_parser 互通。",
+                "default": true
+            },
+            "feedback_enabled": {
+                "description": "启用成功/失败状态贴图",
+                "type": "bool",
+                "hint": "解析成功贴成功表情，失败贴失败表情，便于判断机器人是否在运行。",
+                "default": true
+            },
+            "success_emoji_id": {
+                "description": "成功表情 ID",
+                "type": "int",
+                "hint": "QQ 贴表情面板中的表情 ID；默认 324（✅）。若你的协议端贴不上，可换成面板存在的表情 ID。",
+                "default": 324
+            },
+            "failed_emoji_id": {
+                "description": "失败表情 ID",
+                "type": "int",
+                "hint": "QQ 贴表情面板中的表情 ID；默认 336（❌）。",
+                "default": 336
+            }
+        }
     }
 }

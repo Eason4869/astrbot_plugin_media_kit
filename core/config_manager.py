@@ -471,6 +471,23 @@ class AdminConfig:
     debug_mode: bool = False
 
 
+@dataclass
+class EmojiFeedbackConfig:
+    """群聊贴表情与多 Bot 仲裁配置。
+
+    Attributes:
+        arbitration_enabled: 是否启用多 Bot 贴表情仲裁（aiocqhttp 群聊）。
+        feedback_enabled: 是否在解析成功/失败时贴状态反馈表情。
+        success_emoji_id: 解析成功时贴的表情 ID（默认为 ✅）。
+        failed_emoji_id: 解析失败时贴的表情 ID（默认为 ❌）。
+    """
+
+    arbitration_enabled: bool = True
+    feedback_enabled: bool = True
+    success_emoji_id: int = 324
+    failed_emoji_id: int = 336
+
+
 # ── 配置管理器 ──────────────────────────────────────────
 
 
@@ -1049,6 +1066,28 @@ class ConfigManager:
                 admin_raw.get("debug", False),
                 False,
                 "admin.debug",
+            ),
+        )
+        # --- emoji feedback / 多 Bot 仲裁 ---
+        emoji_raw = config.get("emoji_feedback", {})
+        if not isinstance(emoji_raw, dict):
+            emoji_raw = {}
+        self.emoji_feedback = EmojiFeedbackConfig(
+            arbitration_enabled=self._parse_bool(
+                emoji_raw.get("arbitration_enabled", True),
+                True,
+                "emoji_feedback.arbitration_enabled",
+            ),
+            feedback_enabled=self._parse_bool(
+                emoji_raw.get("feedback_enabled", True),
+                True,
+                "emoji_feedback.feedback_enabled",
+            ),
+            success_emoji_id=self._parse_positive_int(
+                emoji_raw.get("success_emoji_id", 324), 324
+            ),
+            failed_emoji_id=self._parse_positive_int(
+                emoji_raw.get("failed_emoji_id", 336), 336
             ),
         )
         import logging

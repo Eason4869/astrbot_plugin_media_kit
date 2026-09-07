@@ -9,11 +9,11 @@ desc: |
   ## 特色
 
   - 🎴 rika 风格卡片渲染：四种布局、深/浅主题、统计药丸、BV 号简洁展示、封面失败自动兜底
-  - 🤖 群聊贴表情仲裁：多 Bot 同群时自动竞争解析权，避免重复解析；贴表情反馈解析状态
+  - 🤖 群聊贴表情仲裁：多 Bot 同群时自动竞争解析权，避免重复解析；贴表情反馈解析状态，支持开关与自定义表情
   - 💧 修复小红书移动端水印
   - 🍪 B站 Cookie 高画质解析与管理员协助登录
   - 🔁 媒体中转模式、消息打包、文本翻译、热评
-version: v1.0.1
+version: v1.0.2
 astrbot_version: ">=4.25.0"
 author: Eason4869
 repo: https://github.com/Eason4869/astrbot_plugin_media_kit

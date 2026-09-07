@@ -258,21 +258,35 @@ def build_arbiter_context(event: Any) -> Optional[ArbiterContext]:
     )
 
 
-async def mark_parse_success(event: Any) -> None:
-    """解析成功后在链接消息上贴成功表情。"""
+async def mark_parse_success(event: Any, emoji_id: Optional[int] = None) -> None:
+    """解析成功后在链接消息上贴成功表情。
+
+    Args:
+        event: AstrBot 消息事件。
+        emoji_id: 成功表情 ID；缺省使用模块内默认的 ✅。
+    """
     ctx = build_arbiter_context(event)
     if ctx is None:
         return
     await _safe_set_emoji_like(
-        event.bot, ctx.message_id, STATUS_SUCCESS_EMOJI_ID
+        event.bot,
+        ctx.message_id,
+        STATUS_SUCCESS_EMOJI_ID if emoji_id is None else int(emoji_id),
     )
 
 
-async def mark_parse_failed(event: Any) -> None:
-    """解析失败（无任何有效结果）后在链接消息上贴失败表情。"""
+async def mark_parse_failed(event: Any, emoji_id: Optional[int] = None) -> None:
+    """解析失败（无任何有效结果）后在链接消息上贴失败表情。
+
+    Args:
+        event: AstrBot 消息事件。
+        emoji_id: 失败表情 ID；缺省使用模块内默认的 ❌。
+    """
     ctx = build_arbiter_context(event)
     if ctx is None:
         return
     await _safe_set_emoji_like(
-        event.bot, ctx.message_id, STATUS_FAILED_EMOJI_ID
+        event.bot,
+        ctx.message_id,
+        STATUS_FAILED_EMOJI_ID if emoji_id is None else int(emoji_id),
     )

@@ -23,6 +23,9 @@ from .core.storage import (
     register_files_with_token_service,
 )
 from .core.constants import Config
+
+_PLUGIN_VERSION = Config.PLUGIN_VERSION
+
 from .core.message_adapter.sender import MessageDeliveryError, MessageSender
 from .core.message_adapter.node_builder import (
     build_all_nodes,
@@ -50,7 +53,7 @@ from .core.arbiter import (
     "astrbot_plugin_media_kit",
     "Eason4869",
     "媒体解析工具箱 - 聚合解析流媒体平台链接，转换为媒体直链发送",
-    "1.0.0",
+    _PLUGIN_VERSION,
 )
 class VideoParserPlugin(Star):
     def __init__(self, context: Context, config: dict):
@@ -916,13 +919,17 @@ class VideoParserPlugin(Star):
 
         # 多 Bot 仲裁：群聊 aiocqhttp 平台下，通过贴表情竞争解析权，
         # 输掉仲裁的 Bot 静默退出，避免多个 Bot 重复解析同一条链接。
-        arbiter_ctx = build_arbiter_context(event)
-        if arbiter_ctx is not None:
-            won = await self.arbiter.compete(event.bot, arbiter_ctx)
-            if not won:
-                if cfg.admin.debug_mode:
-                    self.logger.debug("本 Bot 在贴表情仲裁中落败，跳过解析")
-                return
+        emoji_cfg = cfg.emoji_feedback
+        if emoji_cfg.arbitration_enabled:
+            arbiter_ctx = build_arbiter_context(event)
+            if arbiter_ctx is not None:
+                won = await self.arbiter.compete(event.bot, arbiter_ctx)
+                if not won:
+                    if cfg.admin.debug_mode:
+                        self.logger.debug(
+                            "本 Bot 在贴表情仲裁中落败，跳过解析"
+                        )
+                    return
 
         sender_name, sender_id = self.message_sender.get_sender_info(event)
 
@@ -951,7 +958,8 @@ class VideoParserPlugin(Star):
                     await event.send(
                         event.plain_result("引用消息中的链接未获得可归档解析结果。")
                     )
-                await mark_parse_failed(event)
+                if emoji_cfg.feedback_enabled:
+                    await mark_parse_failed(event, emoji_cfg.failed_emoji_id)
                 return
             self._apply_output_flags(metadata_list)
             if zip_requested:
@@ -981,7 +989,8 @@ class VideoParserPlugin(Star):
                     await event.send(
                         event.plain_result("引用消息中的链接没有可归档内容。")
                     )
-                await mark_parse_failed(event)
+                if emoji_cfg.feedback_enabled:
+                    await mark_parse_failed(event, emoji_cfg.failed_emoji_id)
                 return
 
             translation_task, translation_metadata_list = self._start_translation_task(
@@ -1001,6 +1010,7 @@ class VideoParserPlugin(Star):
                     translation_task=translation_task,
                     translation_metadata_list=translation_metadata_list,
                 )
-                await mark_parse_success(event)
+                if emoji_cfg.feedback_enabled:
+                    await mark_parse_success(event, emoji_cfg.success_emoji_id)
             finally:
                 await self._cancel_translation_task(translation_task)
