@@ -26,12 +26,6 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 - 📝 **正文翻译**：可选大模型翻译标题与正文（AstrBot 内置 AI 或自定义 OpenAI 兼容接口）
 - 🛠️ **细粒度配置**：每个平台可独立设置全部发送 / 仅文本 / 仅富媒体 / 关闭，支持解析频率限制、白黑名单、分平台代理、B站 Cookie 高画质与扫码协助登录
 
-示意卡片：
-
-<p align="center">
-  <img src="docs/images/card_standard.jpg" width="48%" alt="标准布局卡片">
-  <img src="docs/images/card_immersive.jpg" width="48%" alt="沉浸式布局卡片">
-</p>
 
 ---
 
