@@ -1,9 +1,15 @@
 """版本一致性测试：Config.PLUGIN_VERSION 与 metadata.yaml / main.py 注册版本保持一致。"""
 import os
 import re
+import sys
 import unittest
 
-from . import support  # noqa: F401  注入仓库根路径
+# 自举路径：兼容 `python -m unittest discover -s tests` 等任意启动方式。
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.dirname(_HERE))
+
+import support  # noqa: F401,E402
 
 
 def _repo_root() -> str:

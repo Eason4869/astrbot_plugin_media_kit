@@ -1,10 +1,17 @@
-"""离线解析响应单测：验证 X(Twitter) 头像字段修复与 Steam 封面提取。"""
+"""离线解析响应单测：验证 X(Twitter) 头像字段修复与 Steam/B站直播封面提取。"""
+import os
+import sys
 import unittest
 
-from . import support  # noqa: F401
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.dirname(_HERE))
 
-from core.parser.platform.steam import SteamParser
-from core.parser.platform.twitter import TwitterParser
+import support  # noqa: F401,E402
+
+from core.parser.platform.bili_live import BiliLiveParser  # noqa: E402
+from core.parser.platform.steam import SteamParser  # noqa: E402
+from core.parser.platform.twitter import TwitterParser  # noqa: E402
 
 
 def _make_parser(cls, **kwargs):
@@ -118,6 +125,75 @@ class TestSteamCoverExtraction(unittest.TestCase):
         )
         self.assertEqual(video_urls, [])
         self.assertEqual(covers, [])
+
+
+class _FakeLiveResponse:
+    def __init__(self, payload=None, text_body=""):
+        self.status = 200
+        self._payload = payload
+        self._text = text_body
+
+    def raise_for_status(self):
+        return None
+
+    async def json(self, content_type=None):
+        return self._payload
+
+    async def text(self):
+        return self._text
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _FakeLiveSession:
+    """按 URL 分发：get_info 返回 JSON，房间页返回内嵌 JSON 的 HTML。"""
+
+    def __init__(self, room_info):
+        self._room_info = room_info
+
+    def get(self, url, **kwargs):
+        if "Room/get_info" in url:
+            return _FakeLiveResponse(payload=self._room_info)
+        # 页面内嵌 JSON：uname / face（正斜杠，生产代码兼容 \/ 与 //）
+        page = (
+            '<html><script>{"info":{"uname":"主播A"},'
+            '"base_info":{"face":"https://i0.hdslb.com/face.jpg"}}'
+            "</script></html>"
+        )
+        return _FakeLiveResponse(text_body=page)
+
+
+class TestBiliLiveParse(unittest.IsolatedAsyncioTestCase):
+    async def test_card_only_metadata_with_cover(self):
+        parser = BiliLiveParser()
+        room_info = {
+            "code": 0,
+            "data": {
+                "title": "今晚打游戏",
+                "user_cover": "//i0.hdslb.com/live_cover.jpg",
+                "live_status": 1,
+                "area_name": "单机游戏",
+                "online": 12345,
+                "live_time": "2026-09-08 20:00:00",
+                "description": "<p>欢迎来到直播间&nbsp;!</p>",
+            },
+        }
+        session = _FakeLiveSession(room_info)
+        meta = await parser.parse(session, "https://live.bilibili.com/21452505")
+        self.assertEqual(meta["platform"], "live")
+        self.assertTrue(meta["is_live"])
+        # 封面补全协议头
+        self.assertTrue(meta["cover_url"].startswith("https://"))
+        # 仅卡片：无任何可下载媒体
+        self.assertEqual(meta["video_urls"], [])
+        self.assertEqual(meta["image_urls"], [])
+        self.assertTrue(meta["card_cover_urls"])
+        self.assertIn("主播A", meta["author"])
+        self.assertIn("直播中", meta["desc"])
 
 
 if __name__ == "__main__":
