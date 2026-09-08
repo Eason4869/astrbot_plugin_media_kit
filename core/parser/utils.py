@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import json
+import re
 from typing import Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -115,6 +116,52 @@ def extract_url_from_card_data(msg_data) -> Optional[str]:
         return curl_link
     except (AttributeError, KeyError, json.JSONDecodeError, TypeError):
         return None
+
+
+# 从 JSON 卡片原文里通用扫描 http(s) 链接的正则：匹配到空白或 JSON 标点为止。
+# 覆盖哔哩哔哩 QQ 小程序（miniapp）等「qqdocurl / news.jumpUrl 字段不存在、
+# 但分享链接以明文嵌在 JSON 内」的卡片；命中后仍交给各平台解析器按域名认领，
+# 因此 QQ 自己的域名（如 qq.com / qlogo.cn 图片 CDN）不会被误解析。
+_CARD_RAW_URL_RE = re.compile(r"https?://[^\s\"'<>\\\]\[{}（）]+", re.IGNORECASE)
+# 链接尾部常见的 JSON / 标点残留（正则无法用字符类表达的收尾字符）
+_CARD_URL_TRAILING = ".,!?;:，。！？；：）】》」'\")"
+
+
+def extract_urls_from_card_raw(msg_data) -> list:
+    """从单个消息段的原始内容（JSON 卡片）中通用扫描全部 http(s) 链接。
+
+    QQ 结构化卡片的字段结构随分享类型变化很大（文档卡片 qqdocurl、新闻卡片
+    news.jumpUrl、哔哩哔哩等小程序卡片则把 b23.tv/直播链接内嵌在 JSON 其它字段）。
+    与其逐一猜测字段，这里直接在序列化后的原始文本里扫描所有链接，再由各平台
+    解析器按域名筛选：只有真正受支持的平台链接会被认领，其余自动忽略。
+
+    Returns:
+        去重、保序的链接字符串列表；无内容时为空列表。
+    """
+    try:
+        raw = ""
+        if isinstance(msg_data, dict):
+            inner = msg_data.get("data")
+            if isinstance(inner, str) and inner.strip():
+                raw = inner
+            elif msg_data:
+                # 有些适配层把卡片 JSON 直接放在 dict 里（无 data 包装）
+                raw = json.dumps(msg_data, ensure_ascii=False)
+        elif isinstance(msg_data, str) and msg_data.strip():
+            raw = msg_data
+        if not raw:
+            return []
+
+        urls = []
+        seen = set()
+        for match in _CARD_RAW_URL_RE.finditer(raw):
+            url = match.group(0).rstrip(_CARD_URL_TRAILING)
+            if url and url not in seen:
+                seen.add(url)
+                urls.append(url)
+        return urls
+    except Exception:
+        return []
 
 
 def build_request_headers(
