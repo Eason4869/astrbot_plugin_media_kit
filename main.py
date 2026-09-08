@@ -312,6 +312,18 @@ class VideoParserPlugin(Star):
             for field_name, metadata_key in candidates
         )
 
+    @staticmethod
+    def _any_card_sent(metadata_list) -> bool:
+        """判断是否有信息卡片已被单独发送并成为解析结果。
+
+        当卡片已发送（_card_sent_separately=True）而卡片之外的媒体/文本节点为空
+        （如 B站直播这类仅卡片结果）时，不应再提示「没有可发送的内容」。
+        """
+        return any(
+            bool(metadata.get("_card_sent_separately"))
+            for metadata in metadata_list or []
+        )
+
     def _filter_links_by_output(self, links_with_parser):
         """过滤掉当前配置下不会产生任何输出的控制器链接。"""
         cfg = self.config_manager
@@ -616,11 +628,14 @@ class VideoParserPlugin(Star):
             )
 
             if not build_result.all_link_nodes:
-                await event.send(
-                    event.plain_result(
-                        "解析完成，但没有可发送的内容，可能是下载失败或媒体不可访问。"
+                # 卡片已单独发送并成为这条解析的结果时，不应再提示「没有可发送的
+                # 内容」，否则会对纯卡片结果（如 B站直播）产生误导。
+                if not self._any_card_sent(processed_metadata_list):
+                    await event.send(
+                        event.plain_result(
+                            "解析完成，但没有可发送的内容，可能是下载失败或媒体不可访问。"
+                        )
                     )
-                )
                 return
 
             translation_nodes = await self._build_translation_nodes_after_task(
