@@ -9,7 +9,7 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 [![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-orange.svg)](https://github.com/AstrBotDevs/AstrBot)
-[![Version](https://img.shields.io/badge/Version-v1.1.0--beta-orange.svg)](https://github.com/Eason4869/astrbot_plugin_media_kit)
+[![Version](https://img.shields.io/badge/Version-v1.1.0-green.svg)](https://github.com/Eason4869/astrbot_plugin_media_kit)
 
 </div>
 
@@ -235,7 +235,7 @@ Steam / 小黑盒媒体多走 Steam CDN，下载速度不佳时可在 `代理设
 ## 📝 其他说明
 
 - 机器人自动跳过自身消息以防重复解析。
-- **B站直播（实验性）**：`live.bilibili.com/&lt;房间号&gt;` 链接返回仅信息卡片（标题、作者、直播间封面、开播状态、分区、公告），不下发视频 / 图片媒体；依赖 B站公开接口，无主播封面或接口风控时卡片可能缺失封面但仍发送文字。抖音直播因公开页面不携带房间数据、接口强风控，暂不支持解析。
+- **B站直播**：`live.bilibili.com/&lt;房间号&gt;` 链接返回仅信息卡片（标题、作者、直播间封面、开播状态、分区、公告），不下发视频 / 图片媒体；依赖 B站公开接口，无主播封面或接口风控时卡片可能缺失封面但仍发送文字。抖音直播因公开页面不携带房间数据、接口强风控，暂不支持解析。
 - 非 JPG/PNG 图片会尝试转换为 PNG，转换失败保留原格式；HLS 选择最高分辨率并用 ffmpeg 封装，拒绝 `EXT-X-BYTERANGE` 清单以避免损坏文件。
 - 触发方式：默认自动解析消息中的链接；也可配置手动触发关键词，或引用含链接的消息并附关键词触发。
 
