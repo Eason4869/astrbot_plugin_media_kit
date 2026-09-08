@@ -27,6 +27,7 @@ PLATFORM_DISPLAY_NAMES: Dict[str, str] = {
     "xianyu": "闲鱼",
     "xiaoheihe": "小黑盒",
     "youtube": "YouTube",
+    "live": "B站直播",
 }
 
 

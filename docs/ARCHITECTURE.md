@@ -175,7 +175,7 @@ cache/runtime_manager/bilibili/cookie.json
 
 - 只负责文本提链，不再使用用户可伪造的文本哨兵；`main.py` 在事件层通过发送者 ID 跳过机器人自身消息。
 - 遍历启用的解析器调用 `extract_links()`。
-- 过滤 hostname 标签含 `live` 的直播链接，也会识别 query 参数内嵌的直播跳转。
+- 直播链接不再全局拦截：B站直播由专门的 `BiliLiveParser`（platform=`live`）认领并返回仅卡片元数据；其余未支持的直播域名仍由各平台解析器内部的 `is_live_url` 兜底跳过。
 - 按原文出现位置排序并去重。
 
 `ParserManager` 负责：
@@ -377,7 +377,7 @@ finally 清理本次 temp_files + video_files
 LinkRouter.extract_links_with_parser()
   ├─ 遍历 parser.extract_links()
   ├─ 机器人自发消息由 main.py 按发送者身份提前跳过
-  ├─ 过滤直播链接
+  ├─ B站直播链接由 BiliLiveParser 认领；其余直播域名由平台内兜底跳过
   ├─ 按出现位置排序
   └─ 去重
   ↓

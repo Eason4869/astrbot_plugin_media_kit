@@ -9,7 +9,7 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 [![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-orange.svg)](https://github.com/AstrBotDevs/AstrBot)
-[![Version](https://img.shields.io/badge/Version-v1.0.2-green.svg)](https://github.com/Eason4869/astrbot_plugin_media_kit)
+[![Version](https://img.shields.io/badge/Version-v1.1.0-green.svg)](https://github.com/Eason4869/astrbot_plugin_media_kit)
 
 </div>
 
@@ -21,7 +21,7 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 
 - 🎴 **rika 风格卡片渲染**：把标题、作者、头像、封面、播放/点赞等统计渲染成图片卡片，支持 `标准` / `杂志` / `沉浸式` / `信息流` 四种布局与深 / 浅主题；封面下载失败自动兜底
 - 🤖 **群聊贴表情仲裁**：群里有多个机器人时，通过贴表情自动竞争解析权，保证一条链接只有一个机器人响应；同时用贴表情反馈解析状态（占坑 / 成功 / 失败）
-- 📺 **多平台聚合解析**：B站、抖音、TikTok、快手、微博、小红书、闲鱼、今日头条、小黑盒、Steam、Twitter/X、Pixiv
+- 📺 **多平台聚合解析**：B站、B站直播、抖音、TikTok、快手、微博、小红书、闲鱼、今日头条、小黑盒、Steam、Twitter/X、Pixiv
 - 🔁 **灵活发送**：消息聚合（不聚合 / 全部聚合 / 按条件聚合）、媒体中转、引用链接一键导出 ZIP
 - 📝 **正文翻译**：可选大模型翻译标题与正文（AstrBot 内置 AI 或自定义 OpenAI 兼容接口）
 - 🛠️ **细粒度配置**：每个平台可独立设置全部发送 / 仅文本 / 仅富媒体 / 关闭，支持解析频率限制、白黑名单、分平台代理、B站 Cookie 高画质与扫码协助登录
@@ -44,6 +44,11 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 <td><strong>B站</strong></td>
 <td>短链（<code>b23.tv/...</code>）、视频（<code>bilibili.com/video/av|BV...</code>）、番剧（<code>bangumi/play/ep|ss...</code>）、动态（<code>opus/...</code>、<code>t.bilibili.com/...</code>）、小程序卡片</td>
 <td>视频 / 图片 / 文本 / 热评</td>
+</tr>
+<tr>
+<td><strong>B站直播</strong></td>
+<td>直播间链接（<code>live.bilibili.com/&lt;房间号&gt;</code>）</td>
+<td>仅卡片（含直播间封面，不下发媒体）</td>
 </tr>
 <tr>
 <td><strong>抖音</strong></td>
@@ -125,6 +130,8 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 
 默认所有平台均为 `全部发送`。
 
+> **B站直播**平台仅提供 `关闭 / 全部发送 / 仅文本` 三种模式（直播本就只产生卡片，不发媒体）；建议保持 `全部发送`。
+
 ---
 
 ## 🎴 卡片渲染
@@ -165,6 +172,18 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 - **小黑盒**：游戏详情走签名接口（含评分、价格、类型、发行信息、预告视频），BBS 帖子解析正文与媒体。相关加解密依赖 `cryptography` 库。
 
 Steam / 小黑盒媒体多走 Steam CDN，下载速度不佳时可在 `代理设置 → Steam 代理` 中为解析 / 图片 / 视频分别启用代理。
+
+---
+
+## 🔴 B站直播（仅卡片）
+
+发送 `live.bilibili.com/<房间号>` 直播间链接时，机器人**只返回一张信息卡片**：以直播间封面为卡片主视觉，展示直播间标题、作者、开播状态、在线人数、分区与公告。**不下载、不发送任何视频或图片媒体**，避免对持续直播流的无意义下载。
+
+- 使用 B站公开房间接口（`room/v1/Room/get_info`）与直播间页面获取信息，无需登录
+- 未开播的房间同样返回卡片，并标注「未开播」
+- 直播间封面缺失或图片下载失败时卡片自动回退为纯文本，不影响文字信息展示
+- 该能力通过独立的 **「B站直播」** 平台开关控制（`解析器与输出模式` → `B站直播`）
+- 抖音直播因页面不携带房间数据、接口风控强，暂不支持解析
 
 ---
 
@@ -213,7 +232,8 @@ Steam / 小黑盒媒体多走 Steam CDN，下载速度不佳时可在 `代理设
 
 ## 📝 其他说明
 
-- 机器人自动跳过自身消息以防重复解析；直播链接自动跳过。
+- 机器人自动跳过自身消息以防重复解析。
+- **B站直播（实验性）**：`live.bilibili.com/&lt;房间号&gt;` 链接返回仅信息卡片（标题、作者、直播间封面、开播状态、分区、公告），不下发视频 / 图片媒体；依赖 B站公开接口，无主播封面或接口风控时卡片可能缺失封面但仍发送文字。抖音直播因公开页面不携带房间数据、接口强风控，暂不支持解析。
 - 非 JPG/PNG 图片会尝试转换为 PNG，转换失败保留原格式；HLS 选择最高分辨率并用 ffmpeg 封装，拒绝 `EXT-X-BYTERANGE` 清单以避免损坏文件。
 - 触发方式：默认自动解析消息中的链接；也可配置手动触发关键词，或引用含链接的消息并附关键词触发。
 
