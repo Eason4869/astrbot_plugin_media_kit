@@ -1,11 +1,18 @@
-"""链接提取/识别的离线单测：覆盖 Twitter/X 与 Steam 的 can_parse/extract_links。"""
+"""链接提取/识别的离线单测：覆盖 Twitter/X、Steam、B站直播的 can_parse/extract_links。"""
+import os
+import sys
 import unittest
 
-from . import support  # noqa: F401
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.dirname(_HERE))
 
-from core.parser.platform.base import BaseVideoParser
-from core.parser.platform.steam import SteamParser
-from core.parser.platform.twitter import TwitterParser
+import support  # noqa: F401,E402
+
+from core.parser.platform.base import BaseVideoParser  # noqa: E402
+from core.parser.platform.bili_live import BiliLiveParser  # noqa: E402
+from core.parser.platform.steam import SteamParser  # noqa: E402
+from core.parser.platform.twitter import TwitterParser  # noqa: E402
 
 
 def _make(parser_cls, **kwargs) -> BaseVideoParser:
@@ -63,6 +70,56 @@ class TestSteamRecognition(unittest.TestCase):
             self.parser._parse_appid("https://store.steampowered.com/app/730/CS2/"),
             "730",
         )
+
+
+class TestBiliLiveRecognition(unittest.TestCase):
+    def setUp(self):
+        self.parser = BiliLiveParser()
+
+    def test_can_parse_room_url(self):
+        for url in (
+            "https://live.bilibili.com/21452505",
+            "https://live.bilibili.com/h5/21452505",
+            "http://live.bilibili.com/6?broadcast_type=0",
+        ):
+            self.assertTrue(self.parser.can_parse(url), url)
+
+    def test_room_id_extracted(self):
+        self.assertEqual(
+            self.parser._parse_room_id("https://live.bilibili.com/21452505"),
+            "21452505",
+        )
+
+    def test_extract_links_dedup_by_room(self):
+        text = (
+            "来玩 https://live.bilibili.com/21452505 "
+            "和 https://live.bilibili.com/21452505?from=search"
+        )
+        links = self.parser.extract_links(text)
+        self.assertEqual(len(links), 1, links)
+
+    def test_bilibili_video_parser_does_not_claim_live(self):
+        # B站视频解析器不应认领直播间链接，避免与直播解析器冲突
+        from core.parser.platform.bilibili import BilibiliParser
+
+        bilibili = BilibiliParser()
+        self.assertFalse(
+            bilibili.can_parse("https://live.bilibili.com/21452505")
+        )
+
+    def test_can_parse_b23_short_link(self):
+        # b23 短链可能是视频也可能是直播，直播解析器应按能力认领后在展开时判别
+        self.assertTrue(self.parser.can_parse("https://b23.tv/abcDEF"))
+
+    def test_extract_links_keeps_b23(self):
+        links = self.parser.extract_links("看这个 https://b23.tv/abcDEF 怎么样")
+        self.assertIn("https://b23.tv/abcDEF", links)
+
+    def test_extract_links_b23_after_live_bilibili_video_no_conflict(self):
+        # 直播解析器如今排在 B站视频解析器之前，b23 由直播解析器优先提取
+        text = "https://b23.tv/abcDEF"
+        links = self.parser.extract_links(text)
+        self.assertEqual(links, ["https://b23.tv/abcDEF"])
 
 
 if __name__ == "__main__":

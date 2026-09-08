@@ -11,6 +11,7 @@ from .xiaoheihe import XiaoheiheParser
 from .steam import SteamParser
 from .twitter import TwitterParser
 from .pixiv import PixivParser
+from .bili_live import BiliLiveParser
 from .base import BaseVideoParser
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     'SteamParser',
     'TwitterParser',
     'PixivParser',
+    'BiliLiveParser',
     'BaseVideoParser'
 ]
 

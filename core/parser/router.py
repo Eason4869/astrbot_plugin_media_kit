@@ -5,7 +5,6 @@ from typing import List, Tuple
 from ..logger import logger
 
 from .platform.base import BaseVideoParser
-from .utils import is_live_url
 
 
 class LinkRouter:
@@ -48,9 +47,6 @@ class LinkRouter:
                     logger.warning(f"解析器 {parser.name} 返回了无效链接项，已跳过")
                     continue
                 link = link.strip()
-                if is_live_url(link):
-                    logger.debug(f"提取到直播域名链接，跳过: {link}")
-                    continue
                 position = text.find(link)
                 if position == -1:
                     # 平台解析器可能把移动端或分享链接规范化为标准链接。
@@ -90,9 +86,7 @@ class LinkRouter:
             ValueError: 当找不到匹配的解析器时
         """
         logger.debug(f"查找URL的解析器: {url}")
-        if is_live_url(url):
-            logger.debug(f"检测到直播域名链接，跳过解析: {url}")
-            raise ValueError(f"直播域名链接不解析: {url}")
+        # 直播链接不再全局拦截：由专门的直播解析器（如 BiliLiveParser）按能力认领
         for parser in self.parsers:
             try:
                 can_parse = parser.can_parse(url)

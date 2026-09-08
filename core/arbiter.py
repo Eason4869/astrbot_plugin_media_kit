@@ -184,10 +184,11 @@ class EmojiLikeArbiter:
 
 # QQ 贴表情（消息表情回应）使用的 emoji_id。
 # 289 为仲裁占坑表情，124 为仲裁胜出确认表情（协议固定，勿改）。
-# 以下两个用于解析结果反馈，取 QQ 贴表情面板中常用的 ✅ / ❌ 语义表情；
+# 以下两个用于解析结果反馈，取 QQ 贴表情面板中的“对的对的 / 不对不对”，
+# 语义直观且在主流协议端（NapCat/Lagrange）面板中可用；
 # 若协议端不支持对应表情，set_msg_emoji_like 会抛错并被静默忽略，不影响解析。
-STATUS_SUCCESS_EMOJI_ID = 324
-STATUS_FAILED_EMOJI_ID = 336
+STATUS_SUCCESS_EMOJI_ID = 478
+STATUS_FAILED_EMOJI_ID = 479
 
 
 async def _safe_set_emoji_like(

@@ -1,9 +1,15 @@
 """版本一致性测试：Config.PLUGIN_VERSION 与 metadata.yaml / main.py 注册版本保持一致。"""
 import os
 import re
+import sys
 import unittest
 
-from . import support  # noqa: F401  注入仓库根路径
+# 自举路径：兼容 `python -m unittest discover -s tests` 等任意启动方式。
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.dirname(_HERE))
+
+import support  # noqa: F401,E402
 
 
 def _repo_root() -> str:
@@ -19,15 +25,23 @@ class TestVersionConsistency(unittest.TestCase):
     def test_constants_version(self):
         import core.constants
 
+        # 支持如 1.2.3 / 1.2.3-beta 等语义化版本
         self.assertTrue(
-            re.fullmatch(r"\d+\.\d+\.\d+", core.constants.Config.PLUGIN_VERSION)
+            re.fullmatch(
+                r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?",
+                core.constants.Config.PLUGIN_VERSION,
+            )
         )
 
     def test_metadata_matches_constants(self):
         import core.constants
 
         metadata = _read("metadata.yaml")
-        match = re.search(r"^version:\s*v?(?P<ver>[\d.]+)", metadata, re.MULTILINE)
+        match = re.search(
+            r"^version:\s*v?(?P<ver>\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)",
+            metadata,
+            re.MULTILINE,
+        )
         self.assertIsNotNone(match, "metadata.yaml 缺少 version 行")
         self.assertEqual(
             match.group("ver"),
