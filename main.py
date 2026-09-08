@@ -12,7 +12,10 @@ from astrbot.api.star import Context, Star, register
 from astrbot.core.star.filter.event_message_type import EventMessageType
 
 from .core.parser import ParserManager
-from .core.parser.utils import extract_url_from_card_data
+from .core.parser.utils import (
+    extract_url_from_card_data,
+    extract_urls_from_card_raw,
+)
 from .core.downloader import DownloadManager, create_public_only_connector
 from .core.storage import (
     cleanup_expired_marked_in,
@@ -255,11 +258,20 @@ class VideoParserPlugin(Star):
                 return []
             urls: list[str] = []
             seen = set()
-            for component in messages:
-                url = extract_url_from_card_data(getattr(component, "data", None))
+
+            def _add(url: str) -> None:
                 if url and url not in seen:
                     seen.add(url)
                     urls.append(url)
+
+            for component in messages:
+                data = getattr(component, "data", None)
+                # 1) 结构化卡片字段（文档卡片 qqdocurl / 新闻卡片 news.jumpUrl）
+                _add(extract_url_from_card_data(data))
+                # 2) 通用扫描卡片 JSON 原文中的全部链接（覆盖哔哩哔哩等
+                #    QQ 小程序卡片：其分享链接不落在已知结构化字段里）
+                for raw_url in extract_urls_from_card_raw(data):
+                    _add(raw_url)
             return urls
         except (AttributeError, IndexError, TypeError) as e:
             if self.config_manager.admin.debug_mode:
