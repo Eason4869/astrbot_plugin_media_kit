@@ -29,7 +29,7 @@ class Config:
     
     PLUGIN_NAME = "astrbot_plugin_media_kit"
     # 插件版本：main.py 注册与 metadata.yaml 均以此为准，测试会校验一致性
-    PLUGIN_VERSION = "1.1.1"
+    PLUGIN_VERSION = "1.1.2"
     CACHE_DIR_NAME = "cache"
     RUNTIME_DIR_NAME = "runtime_manager"
     DEFAULT_CACHE_DIR = "/app/sharedFolder/video_parser/cache"
