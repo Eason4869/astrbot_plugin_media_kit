@@ -964,14 +964,14 @@
             "success_emoji_id": {
                 "description": "成功表情 ID",
                 "type": "int",
-                "hint": "QQ 贴表情面板中的表情 ID；默认 324（✅）。若你的协议端贴不上，可换成面板存在的表情 ID。",
-                "default": 324
+                "hint": "QQ 贴表情面板中的表情 ID；默认 478（对的对的）。若你的协议端贴不上，可换成面板存在的表情 ID。",
+                "default": 478
             },
             "failed_emoji_id": {
                 "description": "失败表情 ID",
                 "type": "int",
-                "hint": "QQ 贴表情面板中的表情 ID；默认 336（❌）。",
-                "default": 336
+                "hint": "QQ 贴表情面板中的表情 ID；默认 479（不对不对）。",
+                "default": 479
             }
         }
     }

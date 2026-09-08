@@ -107,6 +107,20 @@ class TestBiliLiveRecognition(unittest.TestCase):
             bilibili.can_parse("https://live.bilibili.com/21452505")
         )
 
+    def test_can_parse_b23_short_link(self):
+        # b23 短链可能是视频也可能是直播，直播解析器应按能力认领后在展开时判别
+        self.assertTrue(self.parser.can_parse("https://b23.tv/abcDEF"))
+
+    def test_extract_links_keeps_b23(self):
+        links = self.parser.extract_links("看这个 https://b23.tv/abcDEF 怎么样")
+        self.assertIn("https://b23.tv/abcDEF", links)
+
+    def test_extract_links_b23_after_live_bilibili_video_no_conflict(self):
+        # 直播解析器如今排在 B站视频解析器之前，b23 由直播解析器优先提取
+        text = "https://b23.tv/abcDEF"
+        links = self.parser.extract_links(text)
+        self.assertEqual(links, ["https://b23.tv/abcDEF"])
+
 
 if __name__ == "__main__":
     unittest.main()

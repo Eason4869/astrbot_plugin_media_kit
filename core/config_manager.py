@@ -486,8 +486,8 @@ class EmojiFeedbackConfig:
 
     arbitration_enabled: bool = True
     feedback_enabled: bool = True
-    success_emoji_id: int = 324
-    failed_emoji_id: int = 336
+    success_emoji_id: int = 478
+    failed_emoji_id: int = 479
 
 
 # ── 配置管理器 ──────────────────────────────────────────
@@ -1087,10 +1087,10 @@ class ConfigManager:
                 "emoji_feedback.feedback_enabled",
             ),
             success_emoji_id=self._parse_positive_int(
-                emoji_raw.get("success_emoji_id", 324), 324
+                emoji_raw.get("success_emoji_id", 478), 478
             ),
             failed_emoji_id=self._parse_positive_int(
-                emoji_raw.get("failed_emoji_id", 336), 336
+                emoji_raw.get("failed_emoji_id", 479), 479
             ),
         )
         import logging
@@ -1138,6 +1138,10 @@ class ConfigManager:
         )
         proxy_addr = self.proxy.address or None
 
+        # B站直播解析器需排在 B站视频解析器之前：它优先认领直播间直链与
+        # b23 直播短链，非直播的 b23 短链由它展开后 SkipParse，再由视频解析器处理。
+        if self._enable_live:
+            parsers.append(BiliLiveParser())
         if self._enable_bilibili:
             self.bilibili_parser = BilibiliParser(
                 cookie_runtime_enabled=self.bilibili.cookie_runtime_enabled,
@@ -1208,8 +1212,6 @@ class ConfigManager:
                     proxy=proxy_addr if self.proxy.pixiv_use_proxy else None,
                 )
             )
-        if self._enable_live:
-            parsers.append(BiliLiveParser())
 
         return parsers
 

@@ -41,6 +41,7 @@ LOCAL_MEDIA_DIR = Config.build_cache_dir(_project_root)
 PARSER_DISCOVERY_PACKAGE = "core.parser.platform"
 PARSER_DISCOVERY_SKIP_MODULES = {"base", "short_video_shared"}
 PARSER_DISCOVERY_ORDER = (
+    "bili_live",
     "bilibili",
     "douyin",
     "tiktok",

@@ -11,18 +11,22 @@ import asyncio
 import html as html_lib
 import re
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
 
 from ...types import MediaMetadata
-from ..utils import build_request_headers
+from ..utils import SkipParse, build_request_headers
 from .base import BaseVideoParser
 
 BILI_LIVE_GET_INFO_API = (
     "https://api.live.bilibili.com/room/v1/Room/get_info"
 )
 BILI_LIVE_HOSTS = {"live.bilibili.com"}
+B23_HOST = "b23.tv"
+B23_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+B23_MAX_REDIRECTS = 5
+B23_EXPAND_TIMEOUT_SECONDS = 8.0
 BILI_LIVE_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -32,6 +36,7 @@ LIVE_ROOM_PATH_RE = re.compile(
     r"^/(?:[\w-]+/)?(\d{1,12})(?:/|$)",
     re.IGNORECASE,
 )
+B23_LINK_RE = re.compile(r"https?://b23\.tv/[^\s<>\"'()]+", re.IGNORECASE)
 LIVE_REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 
 
@@ -68,13 +73,32 @@ class BiliLiveParser(BaseVideoParser):
         return digits
 
     def can_parse(self, url: str) -> bool:
-        """判断是否为可解析的 B站 直播间链接。"""
-        return self._parse_room_id(url) is not None
+        """判断是否为可解析的 B站 直播间链接（含 b23 直播短链）。"""
+        return self._parse_room_id(url) is not None or self._is_b23_url(url)
+
+    @staticmethod
+    def _is_b23_url(url: str) -> bool:
+        """判断是否为 b23.tv 短链（可能是视频也可能是直播，需展开确认）。"""
+        if not isinstance(url, str) or not url.strip():
+            return False
+        try:
+            parsed = urlparse(url.strip())
+        except (TypeError, ValueError):
+            return False
+        if parsed.scheme.lower() not in {"http", "https"}:
+            return False
+        return (parsed.hostname or "").lower().rstrip(".") == B23_HOST
 
     def extract_links(self, text: str) -> List[str]:
-        """从文本中提取 B站 直播间链接并去重。"""
+        """从文本中提取 B站 直播间链接与 b23 短链并去重。
+
+        直接的 live.bilibili.com 链接按房间号去重；b23 短链无法在提链阶段
+        确定是否指向直播，统一保留，解析阶段展开后若不是直播再 SkipParse，
+        交给视频解析器（由本解析器排序在其之前完成认领）。
+        """
         links: List[str] = []
-        seen_ids = set()
+        seen = set()
+        # 直播间直链
         for match in re.finditer(
             r"https?://live\.bilibili\.com/[^\s<>\"'()]+",
             text or "",
@@ -82,10 +106,56 @@ class BiliLiveParser(BaseVideoParser):
         ):
             link = match.group(0).rstrip(".,!?)]}>\"'，。！？；：）】》」")
             room_id = self._parse_room_id(link)
-            if room_id and room_id not in seen_ids:
-                seen_ids.add(room_id)
+            if room_id and f"room:{room_id}" not in seen:
+                seen.add(f"room:{room_id}")
+                links.append(link)
+        # b23 短链
+        for match in B23_LINK_RE.finditer(text or ""):
+            link = match.group(0).rstrip(".,!?)]}>\"'，。！？；：）】》」")
+            token = link.rstrip("/")
+            if token and token not in seen:
+                seen.add(token)
                 links.append(link)
         return links
+
+    async def _expand_b23_to_live(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> str:
+        """展开 b23 短链；指向直播间则返回标准 live URL，否则抛 SkipParse。"""
+        headers = {
+            "User-Agent": BILI_LIVE_UA,
+            "Referer": "https://www.bilibili.com",
+            "Accept-Encoding": "gzip, deflate",
+        }
+        current_url = url.strip()
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + B23_EXPAND_TIMEOUT_SECONDS
+        for _ in range(B23_MAX_REDIRECTS):
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise SkipParse("b23 短链展开超时")
+            async with session.get(
+                current_url,
+                headers=headers,
+                allow_redirects=False,
+                timeout=aiohttp.ClientTimeout(total=max(1.0, remaining)),
+            ) as response:
+                status = int(getattr(response, "status", 0) or 0)
+                if status not in B23_REDIRECT_STATUSES:
+                    raise SkipParse("b23 短链未返回重定向，非直播链接")
+                location = str(response.headers.get("Location", "") or "").strip()
+                if not location:
+                    raise SkipParse("b23 短链重定向缺少 Location")
+            expanded = urljoin(current_url, location)
+            target_host = (urlparse(expanded).hostname or "").lower().rstrip(".")
+            if target_host == B23_HOST:
+                current_url = expanded
+                continue
+            if self._parse_room_id(expanded) is not None:
+                return expanded
+            # 落到其它 B站 域名（视频/动态/番剧等）→ 不是直播
+            raise SkipParse("b23 短链指向非直播间内容")
+        raise SkipParse("b23 短链重定向次数过多")
 
     # ── 数据获取 ────────────────────────────────────────
 
@@ -170,9 +240,13 @@ class BiliLiveParser(BaseVideoParser):
     ) -> Optional[MediaMetadata]:
         """解析 B站 直播间并返回仅卡片元数据。"""
         async with self.semaphore:
-            room_id = self._parse_room_id(url)
+            target_url = url
+            if self._parse_room_id(url) is None and self._is_b23_url(url):
+                # b23 短链：展开后确认是否指向直播间，非直播则跳过交由视频解析器
+                target_url = await self._expand_b23_to_live(session, url)
+            room_id = self._parse_room_id(target_url)
             if not room_id:
-                raise RuntimeError(f"无法从链接提取直播间号: {url}")
+                raise SkipParse(f"无法从链接解析直播间号: {url}")
             self.logger.debug(
                 f"[{self.name}] parse: 解析直播间 room_id={room_id}"
             )

@@ -25,15 +25,23 @@ class TestVersionConsistency(unittest.TestCase):
     def test_constants_version(self):
         import core.constants
 
+        # 支持如 1.2.3 / 1.2.3-beta 等语义化版本
         self.assertTrue(
-            re.fullmatch(r"\d+\.\d+\.\d+", core.constants.Config.PLUGIN_VERSION)
+            re.fullmatch(
+                r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?",
+                core.constants.Config.PLUGIN_VERSION,
+            )
         )
 
     def test_metadata_matches_constants(self):
         import core.constants
 
         metadata = _read("metadata.yaml")
-        match = re.search(r"^version:\s*v?(?P<ver>[\d.]+)", metadata, re.MULTILINE)
+        match = re.search(
+            r"^version:\s*v?(?P<ver>\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)",
+            metadata,
+            re.MULTILINE,
+        )
         self.assertIsNotNone(match, "metadata.yaml 缺少 version 行")
         self.assertEqual(
             match.group("ver"),

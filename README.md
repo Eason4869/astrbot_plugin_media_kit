@@ -9,7 +9,7 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 [![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-orange.svg)](https://github.com/AstrBotDevs/AstrBot)
-[![Version](https://img.shields.io/badge/Version-v1.1.0-green.svg)](https://github.com/Eason4869/astrbot_plugin_media_kit)
+[![Version](https://img.shields.io/badge/Version-v1.1.0--beta-orange.svg)](https://github.com/Eason4869/astrbot_plugin_media_kit)
 
 </div>
 
@@ -162,7 +162,7 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 
 - `启用多 Bot 贴表情仲裁`：关闭后本插件不再参与贴表情仲裁（只靠协议端/其他仲裁逻辑避免重复解析）。占用表情 289/124 是跨插件协议的一部分，**不可修改**，否则会与 astrbot_plugin_parser 的机器人失配。
 - `启用成功/失败状态贴图`：控制解析成功/失败时是否贴状态表情。
-- `成功表情 ID` / `失败表情 ID`：可自定义成你的协议端贴表情面板中存在且语义合适的表情 ID（默认 ✅=324、❌=336）。若协议端不支持某个表情，会被静默忽略、不影响解析。
+- `成功表情 ID` / `失败表情 ID`：可自定义成你的协议端贴表情面板中存在且语义合适的表情 ID（默认“对的对的”=478、“不对不对”=479）。若协议端不支持某个表情，会被静默忽略、不影响解析。
 
 ---
 
