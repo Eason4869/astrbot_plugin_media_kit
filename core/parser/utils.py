@@ -11,6 +11,42 @@ class SkipParse(Exception):
     pass
 
 
+# 在共享 aiohttp session 上挂载的短链展开缓存属性名（见 remember/recall 助手）
+_B23_EXPAND_CACHE_ATTR = "_media_kit_b23_expand_cache"
+
+
+def remember_expanded_url(session, short_url: str, expanded_url: str) -> None:
+    """在会话级缓存记录短链展开结果，供回落的其它解析器复用。
+
+    b23 短链先由直播解析器展开确认；确认是视频后会 SkipParse 回落到 B站视频
+    解析器。把已得到的展开结果缓存到共享 session 上，可避免视频解析器重新
+    发起一遍相同的重定向请求（省一次网络往返，也少一个失败点）。
+    """
+    try:
+        if session is None or not short_url or not expanded_url:
+            return
+        cache = getattr(session, _B23_EXPAND_CACHE_ATTR, None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(session, _B23_EXPAND_CACHE_ATTR, cache)
+        cache[short_url.strip()] = expanded_url
+    except Exception:
+        # 缓存仅为优化，任何异常都不应影响解析主流程
+        pass
+
+
+def recall_expanded_url(session, short_url: str) -> Optional[str]:
+    """读取会话级缓存中的短链展开结果；无记录返回 None。"""
+    try:
+        cache = getattr(session, _B23_EXPAND_CACHE_ATTR, None)
+        if isinstance(cache, dict):
+            value = cache.get((short_url or "").strip())
+            return value if isinstance(value, str) else None
+    except Exception:
+        return None
+    return None
+
+
 def format_duration_ms(duration_ms) -> str:
     """将毫秒时长格式化为 mm:ss 或 hh:mm:ss。"""
     if duration_ms is None:

@@ -22,6 +22,8 @@ from core.parser.platform.base import BaseVideoParser  # noqa: E402
 from core.parser.utils import (  # noqa: E402
     SkipParse,
     extract_urls_from_card_raw,
+    recall_expanded_url,
+    remember_expanded_url,
 )
 
 
@@ -154,6 +156,86 @@ class TestCardRawUrlExtraction(unittest.TestCase):
         card = {"url": "https://b23.tv/z"}
         urls = extract_urls_from_card_raw(card)
         self.assertIn("https://b23.tv/z", urls)
+
+
+class _TimeoutSession:
+    """模拟 b23 请求超时（asyncio.TimeoutError 的 str() 为空）。"""
+
+    def get(self, *args, **kwargs):
+        class _CM:
+            async def __aenter__(self_inner):
+                raise asyncio.TimeoutError()
+
+            async def __aexit__(self_inner, *exc):
+                return False
+
+        return _CM()
+
+
+class TestBiliLiveB23Hardening(unittest.TestCase):
+    def setUp(self):
+        from core.parser.platform.bili_live import BiliLiveParser
+
+        self.parser = BiliLiveParser()
+
+    def test_expand_network_timeout_becomes_skip(self):
+        # 展开期网络超时必须转成 SkipParse（让解析管理器回落），不能是硬错误
+        with self.assertRaises(SkipParse):
+            asyncio.run(
+                self.parser._expand_b23_to_live(
+                    _TimeoutSession(), "https://b23.tv/toOIjEI"
+                )
+            )
+
+    def test_parse_video_b23_falls_back_when_expand_times_out(self):
+        # 直播解析器展开超时抛 SkipParse -> 回落的视频解析器接管并成功
+        calls = {"n": 0}
+
+        class _TimeoutLive(_FakeParser):
+            async def parse(self, session, url):
+                calls["live"] = True
+                raise SkipParse("b23 短链展开失败，交给视频解析器重试: TimeoutError")
+
+        live = _TimeoutLive(
+            "live",
+            can_parse_urls={"https://b23.tv/x"},
+            result={"platform": "live", "video_urls": [], "image_urls": []},
+        )
+        bili = _FakeParser(
+            "bilibili",
+            can_parse_urls={"https://b23.tv/x"},
+            result={"platform": "bilibili", "title": "v",
+                    "video_urls": [["v"]], "image_urls": []},
+        )
+        pm = ParserManager([live, bili])
+        metas = asyncio.run(
+            pm.parse_text("", None, links_with_parser=[("https://b23.tv/x", live)])
+        )
+        self.assertEqual(len(metas), 1)
+        self.assertEqual(metas[0]["platform"], "bilibili")
+
+
+class TestB23ExpandCache(unittest.TestCase):
+    def test_remember_and_recall_on_fake_session(self):
+        class _S:
+            pass
+
+        s = _S()
+        self.assertIsNone(recall_expanded_url(s, "https://b23.tv/a"))
+        remember_expanded_url(s, "https://b23.tv/a",
+                              "https://www.bilibili.com/video/BV1xx")
+        self.assertEqual(
+            recall_expanded_url(s, "https://b23.tv/a"),
+            "https://www.bilibili.com/video/BV1xx",
+        )
+
+    def test_cache_helpers_tolerate_bad_inputs(self):
+        # None session / 空值 / 不可设属性的对象都不应抛错
+        remember_expanded_url(None, "u", "v")
+        remember_expanded_url(object(), "u", "v")  # 无 __dict__ 的普通 object
+        remember_expanded_url(object(), "", "v")
+        self.assertIsNone(recall_expanded_url(None, "u"))
+        self.assertIsNone(recall_expanded_url(object(), "u"))
 
 
 if __name__ == "__main__":

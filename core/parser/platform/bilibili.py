@@ -16,7 +16,13 @@ from ...logger import logger
 
 from .base import BaseVideoParser
 from ..runtime_manager.bilibili.auth import BilibiliAuthRuntime
-from ..utils import build_request_headers, is_live_url, SkipParse, format_duration_ms
+from ..utils import (
+    build_request_headers,
+    is_live_url,
+    SkipParse,
+    format_duration_ms,
+    recall_expanded_url,
+)
 from ...constants import Config
 
 UA = (
@@ -830,6 +836,15 @@ class BilibiliParser(BaseVideoParser):
         parsed_input = urlparse(url)
         if parsed_input.scheme.lower() not in {"http", "https"}:
             raise B23ExpansionError("B23 短链展开失败：仅支持 HTTP(S) URL")
+
+        # 复用会话内已完成的展开结果（直播解析器先展开确认非直播时会缓存），
+        # 避免回落到此再发起一遍相同的重定向请求。
+        cached = recall_expanded_url(session, url)
+        if cached and not _is_b23_url(cached):
+            cached_host = _url_hostname(cached)
+            if _is_trusted_bilibili_host(cached_host) and self.can_parse(cached):
+                logger.debug(f"[{self.name}] expand_b23: 复用已展开结果 {url} -> {cached}")
+                return cached
 
         headers = {
             "User-Agent": UA,
