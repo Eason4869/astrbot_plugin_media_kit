@@ -16,7 +16,12 @@ from urllib.parse import urljoin, urlparse
 import aiohttp
 
 from ...types import MediaMetadata
-from ..utils import SkipParse, build_request_headers
+from ..utils import (
+    SkipParse,
+    build_request_headers,
+    recall_expanded_url,
+    remember_expanded_url,
+)
 from .base import BaseVideoParser
 
 BILI_LIVE_GET_INFO_API = (
@@ -121,7 +126,13 @@ class BiliLiveParser(BaseVideoParser):
     async def _expand_b23_to_live(
         self, session: aiohttp.ClientSession, url: str
     ) -> str:
-        """展开 b23 短链；指向直播间则返回标准 live URL，否则抛 SkipParse。"""
+        """展开 b23 短链；指向直播间则返回标准 live URL，否则抛 SkipParse。
+
+        直播解析器对 b23 短链是「乐观认领」：提链阶段无法区分直播与视频，故
+        先认领、再在此展开确认。因此这里的任何失败（超时、连接错误、非重定向、
+        目标不是直播间等）都必须以 SkipParse 让出，由解析管理器回落到 B站视频
+        解析器；绝不能把网络抖动变成硬错误导致整条短链解析失败。
+        """
         headers = {
             "User-Agent": BILI_LIVE_UA,
             "Referer": "https://www.bilibili.com",
@@ -130,32 +141,48 @@ class BiliLiveParser(BaseVideoParser):
         current_url = url.strip()
         loop = asyncio.get_running_loop()
         deadline = loop.time() + B23_EXPAND_TIMEOUT_SECONDS
-        for _ in range(B23_MAX_REDIRECTS):
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                raise SkipParse("b23 短链展开超时")
-            async with session.get(
-                current_url,
-                headers=headers,
-                allow_redirects=False,
-                timeout=aiohttp.ClientTimeout(total=max(1.0, remaining)),
-            ) as response:
-                status = int(getattr(response, "status", 0) or 0)
-                if status not in B23_REDIRECT_STATUSES:
-                    raise SkipParse("b23 短链未返回重定向，非直播链接")
-                location = str(response.headers.get("Location", "") or "").strip()
-                if not location:
-                    raise SkipParse("b23 短链重定向缺少 Location")
-            expanded = urljoin(current_url, location)
-            target_host = (urlparse(expanded).hostname or "").lower().rstrip(".")
-            if target_host == B23_HOST:
-                current_url = expanded
-                continue
-            if self._parse_room_id(expanded) is not None:
-                return expanded
-            # 落到其它 B站 域名（视频/动态/番剧等）→ 不是直播
-            raise SkipParse("b23 短链指向非直播间内容")
-        raise SkipParse("b23 短链重定向次数过多")
+        try:
+            for _ in range(B23_MAX_REDIRECTS):
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise SkipParse("b23 短链展开超时")
+                async with session.get(
+                    current_url,
+                    headers=headers,
+                    allow_redirects=False,
+                    timeout=aiohttp.ClientTimeout(total=max(1.0, remaining)),
+                ) as response:
+                    status = int(getattr(response, "status", 0) or 0)
+                    if status not in B23_REDIRECT_STATUSES:
+                        raise SkipParse("b23 短链未返回重定向，非直播链接")
+                    location = str(response.headers.get("Location", "") or "").strip()
+                    if not location:
+                        raise SkipParse("b23 短链重定向缺少 Location")
+                expanded = urljoin(current_url, location)
+                target_host = (urlparse(expanded).hostname or "").lower().rstrip(".")
+                if target_host == B23_HOST:
+                    current_url = expanded
+                    continue
+                if self._parse_room_id(expanded) is not None:
+                    return expanded
+                # 落到其它 B站 域名（视频/动态/番剧等）→ 不是直播。
+                # 记录已展开结果，回落的 B站视频解析器可直接复用，无需重新请求。
+                remember_expanded_url(session, url, expanded)
+                raise SkipParse("b23 短链指向非直播间内容")
+            raise SkipParse("b23 短链重定向次数过多")
+        except SkipParse:
+            raise
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # 超时 / 连接错误等网络层失败：无法确认是直播间，让出给视频解析器
+            self.logger.debug(
+                f"[{self.name}] b23 展开失败，按非直播让出 {url}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            raise SkipParse(
+                f"b23 短链展开失败，交给视频解析器重试: {type(exc).__name__}"
+            ) from exc
 
     # ── 数据获取 ────────────────────────────────────────
 
@@ -179,14 +206,21 @@ class BiliLiveParser(BaseVideoParser):
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "zh-CN,zh;q=0.9",
         }
-        async with session.get(
-            BILI_LIVE_GET_INFO_API,
-            params={"room_id": room_id},
-            headers=headers,
-            timeout=LIVE_REQUEST_TIMEOUT,
-        ) as response:
-            response.raise_for_status()
-            payload = await response.json(content_type=None)
+        try:
+            async with session.get(
+                BILI_LIVE_GET_INFO_API,
+                params={"room_id": room_id},
+                headers=headers,
+                timeout=LIVE_REQUEST_TIMEOUT,
+            ) as response:
+                response.raise_for_status()
+                payload = await response.json(content_type=None)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            raise RuntimeError(
+                f"B站直播信息请求失败: {type(exc).__name__}: {exc}"
+            ) from exc
         if not isinstance(payload, dict):
             raise RuntimeError("B站直播接口返回的 JSON 不是对象")
         if payload.get("code") not in (0,):
