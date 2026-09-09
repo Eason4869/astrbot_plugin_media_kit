@@ -9,7 +9,7 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 [![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-orange.svg)](https://github.com/AstrBotDevs/AstrBot)
-[![Version](https://img.shields.io/badge/Version-v1.1.3-green.svg)](https://github.com/Eason4869/astrbot_plugin_media_kit)
+[![Version](https://img.shields.io/badge/Version-v1.2.0--beta-green.svg)](https://github.com/Eason4869/astrbot_plugin_media_kit)
 
 </div>
 
@@ -25,7 +25,7 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 - 🔁 **灵活发送**：消息聚合（不聚合 / 全部聚合 / 按条件聚合）、媒体中转、引用链接一键导出 ZIP
 - 📝 **正文翻译**：可选大模型翻译标题与正文（AstrBot 内置 AI 或自定义 OpenAI 兼容接口）
 - 🛠️ **细粒度配置**：每个平台可独立设置全部发送 / 仅文本 / 仅富媒体 / 关闭，支持解析频率限制、白黑名单、分平台代理、B站 Cookie 高画质与扫码协助登录
-
+- ⌨️ **常用管理命令**：强制解析（绕过频率限制）、解析状态、清理缓存、引用 ZIP 归档；可选限流提示与多链接进度
 
 ---
 
@@ -229,6 +229,22 @@ Steam / 小黑盒媒体多走 Steam CDN，下载速度不佳时可在 `代理设
 - **建议缓存目录**：TikTok、小红书（媒体有时效与鉴权）。
 - Docker 部署请把缓存目录配置为协议端可访问的共享目录；非 Docker 环境自动使用 AstrBot 插件数据目录。
 - TikTok / Twitter / Pixiv 等受地区与风控影响明显，必要时在 `代理设置` 配置代理。媒体连接只允许公网地址，显式配置的代理视为受信端点；Clash/TUN 的 `fake-ip` 模式可能把域名映射到保留网段被安全策略拒绝，请改用 `redir-host` / 真实 DNS。
+
+---
+
+## ⌨️ 常用命令
+
+| 命令 | 谁可用 | 作用 |
+|------|--------|------|
+| （发送链接，自动） | 权限内用户 | 自动解析并发送卡片与媒体 |
+| 引用消息 + `强制解析` | 管理员（默认） | 绕过解析频率限制再解析 |
+| 引用消息 + 归档命令 | 权限内用户 | 将解析详情与媒体打包为 ZIP |
+| 私聊 `清理媒体` | 管理员 | 清理媒体缓存 |
+| 私聊 `解析状态` | 管理员 | 查看版本 / 平台 / 缓存 / 限流概况 |
+
+以上关键词均可在 `管理与调试` / `导出行为：ZIP 归档` 中修改；置空对应关键词可关闭该命令。命令关键词两两不能相同，冲突时会保留高优先级命令并写日志警告。
+
+**解析频率限制**默认关闭。启用后，同链接 / 同用户在时间窗内超出次数会被静默拦截；可开启「被限流时提示」，并配合「强制解析」让管理员显式重解析。
 
 ---
 

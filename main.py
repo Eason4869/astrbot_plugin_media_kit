@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import time
 from typing import Any, Dict, Optional
 
 import aiohttp
@@ -21,9 +22,11 @@ from .core.storage import (
     cleanup_expired_marked_in,
     cleanup_files,
     cleanup_marked_in,
+    format_cache_stats,
     mark_files_expire_after,
     ParseRecordManager,
     register_files_with_token_service,
+    summarize_cache_dir,
 )
 from .core.constants import Config
 
@@ -526,6 +529,39 @@ class VideoParserPlugin(Star):
             )
             if should_process_rich_media:
                 opening_lock = asyncio.Lock()
+                progress_cfg = cfg.message.progress
+                progress_lock = asyncio.Lock()
+                progress_state = {
+                    "done": 0,
+                    "total": len(metadata_list),
+                    "last_emit_at": None,
+                }
+
+                async def maybe_send_progress() -> None:
+                    if zip_requested:
+                        return
+                    async with progress_lock:
+                        progress_state["done"] += 1
+                        done = progress_state["done"]
+                        total = progress_state["total"]
+                        now = time.monotonic()
+                        last = progress_state["last_emit_at"]
+                        if not progress_cfg.should_emit(
+                            total_links=total,
+                            done_count=done,
+                            last_emit_at=last,
+                            now=now,
+                        ):
+                            return
+                        progress_state["last_emit_at"] = now
+                    try:
+                        await event.send(
+                            event.plain_result(f"正在处理媒体 {done}/{total}…")
+                        )
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        self.logger.warning(f"发送进度提示失败: {exc}")
 
                 async def send_opening_once() -> None:
                     nonlocal opening_sent
@@ -547,11 +583,11 @@ class VideoParserPlugin(Star):
                             self.logger.warning(f"发送开场语失败: {exc}")
 
                 async def process_single(metadata: Dict[str, Any]):
-                    if metadata.get("error") or not metadata.get(
-                        "_enable_rich_media", True
-                    ):
-                        return metadata
                     try:
+                        if metadata.get("error") or not metadata.get(
+                            "_enable_rich_media", True
+                        ):
+                            return metadata
                         return await self.download_manager.process_metadata(
                             session,
                             metadata,
@@ -569,6 +605,8 @@ class VideoParserPlugin(Star):
                         )
                         metadata["error"] = str(exc)
                         return metadata
+                    finally:
+                        await maybe_send_progress()
 
                 processed_metadata_list = await asyncio.gather(
                     *(process_single(metadata) for metadata in metadata_list)
@@ -813,6 +851,58 @@ class VideoParserPlugin(Star):
             f"{files_cleaned} 个文件, {failed_subdirs} 个失败"
         )
 
+    @staticmethod
+    def _format_rate_limit_summary(rate_limit) -> str:
+        def _rule(rule) -> str:
+            if not rule.enabled:
+                return "关"
+            return f"{rule.max_count}/{rule.window_seconds}s"
+
+        return f"同链接 {_rule(rate_limit.same_link)}，同用户 {_rule(rate_limit.same_user)}"
+
+    async def _handle_status(self, event: AstrMessageEvent):
+        """管理员解析状态：版本、平台、缓存、限流与 Cookie 概况。"""
+        cfg = self.config_manager
+        try:
+            cache_stats = await self._run_blocking_to_completion(
+                summarize_cache_dir,
+                cfg.download.cache_dir,
+            )
+        except Exception as exc:
+            self.logger.warning(f"统计缓存目录失败: {exc}")
+            cache_stats = summarize_cache_dir(cfg.download.cache_dir)
+
+        platforms = cfg.enabled_platform_modes()
+        platform_text = (
+            "，".join(f"{name}={mode}" for name, mode in platforms)
+            if platforms
+            else "全部关闭"
+        )
+        cookie_text = "已配置" if cfg.bilibili.use_cookie and cfg.bilibili.cookie else "未配置"
+        lines = [
+            "【解析状态】",
+            f"版本：{Config.PLUGIN_VERSION}",
+            f"平台：{platform_text}",
+            format_cache_stats(cache_stats),
+            f"限流：{self._format_rate_limit_summary(cfg.parse_rate_limit)}",
+            f"B站 Cookie：{cookie_text}",
+            f"进行中的媒体流程：{self._active_media_flows}",
+        ]
+        await event.send(event.plain_result("\n".join(lines)))
+        sender_id = str(event.get_sender_id() or "").strip()
+        logger.info(f"管理员 {sender_id} 查询解析状态")
+
+    def _is_admin_sender(self, sender_id: Any) -> bool:
+        admin_id = self.config_manager.permission.admin_id
+        return bool(admin_id) and str(sender_id or "").strip() == admin_id
+
+    def _build_blocked_reply(self) -> str:
+        force_kw = self.config_manager.admin.force_parse_keyword
+        base = "当前链接触发了解析频率限制，请稍后再试。"
+        if force_kw:
+            return f"{base}也可引用原消息并发送「{force_kw}」。"
+        return base
+
     # ── 主事件处理 ──────────────────────────────────────
 
     @filter.event_message_type(EventMessageType.ALL)
@@ -848,76 +938,119 @@ class VideoParserPlugin(Star):
                 await self._handle_clean_cache(event)
             return
 
-        if await self.admin_cookie_assist.handle_admin_command(
-            event, self.bilibili_auth_runtime
-        ):
+        status_kw = cfg.admin.status_keyword
+        if status_kw and original_message_text.strip() == status_kw:
+            if is_private and self._is_admin_sender(sender_id):
+                await self._handle_status(event)
             return
 
-        if not cfg.parser_output.has_any_output():
-            if cfg.admin.debug_mode:
-                self.logger.debug("文本元数据和富媒体均关闭，跳过解析")
-            return
-
-        card_urls = self._extract_urls_from_json_cards(event)
-        if card_urls:
-            if cfg.admin.debug_mode:
-                self.logger.debug(f"[media_kit] 从JSON卡片提取到链接: {card_urls}")
-            parse_text = "\n".join([original_message_text, *card_urls])
-
-        zip_command = cfg.message.archive.command
-        zip_requested = bool(
-            zip_command and original_message_text.strip() == zip_command
-        )
-        if zip_requested:
+        force_parse = False
+        zip_requested = False
+        force_kw = cfg.admin.force_parse_keyword
+        if force_kw and original_message_text.strip() == force_kw:
+            if cfg.admin.force_parse_admin_only and not self._is_admin_sender(sender_id):
+                return
             links_with_parser, reply_message_id = self._try_extract_reply_links(event)
             if reply_message_id:
                 quote_source_message_id = reply_message_id
             links_with_parser = self._filter_links_by_output(links_with_parser)
             if not links_with_parser:
                 await event.send(
-                    event.plain_result("请引用包含可解析链接的消息后再发送归档命令。")
+                    event.plain_result(
+                        "请引用包含可解析链接的消息后再发送强制解析命令。"
+                    )
                 )
                 return
-        else:
-            links_with_parser = self.parser_manager.extract_all_links(parse_text)
-            found_direct_links = bool(links_with_parser)
-            if found_direct_links:
+            force_parse = True
+            if cfg.admin.debug_mode:
+                self.logger.debug(
+                    f"强制解析命中，提取到 {len(links_with_parser)} 个链接，跳过频率限制"
+                )
+        elif not cfg.parser_output.has_any_output():
+            if cfg.admin.debug_mode:
+                self.logger.debug("文本元数据和富媒体均关闭，跳过解析")
+            return
+
+        if not force_parse:
+            if await self.admin_cookie_assist.handle_admin_command(
+                event, self.bilibili_auth_runtime
+            ):
+                return
+
+            card_urls = self._extract_urls_from_json_cards(event)
+            if card_urls:
+                if cfg.admin.debug_mode:
+                    self.logger.debug(
+                        f"[media_kit] 从JSON卡片提取到链接: {card_urls}"
+                    )
+                parse_text = "\n".join([original_message_text, *card_urls])
+
+            zip_command = cfg.message.archive.command
+            zip_requested = bool(
+                zip_command and original_message_text.strip() == zip_command
+            )
+            if zip_requested:
+                links_with_parser, reply_message_id = self._try_extract_reply_links(
+                    event
+                )
+                if reply_message_id:
+                    quote_source_message_id = reply_message_id
                 links_with_parser = self._filter_links_by_output(links_with_parser)
                 if not links_with_parser:
-                    return
-
-            if not links_with_parser:
-                if cfg.trigger.reply_trigger and cfg.trigger.has_keyword(
-                    original_message_text
-                ):
-                    links_with_parser, reply_message_id = self._try_extract_reply_links(
-                        event
-                    )
-                    if reply_message_id:
-                        quote_source_message_id = reply_message_id
-                    links_with_parser = self._filter_links_by_output(links_with_parser)
-                    if links_with_parser and cfg.admin.debug_mode:
-                        self.logger.debug(
-                            f"通过回复触发解析，提取到 {len(links_with_parser)} 个链接"
+                    await event.send(
+                        event.plain_result(
+                            "请引用包含可解析链接的消息后再发送归档命令。"
                         )
-                if not links_with_parser:
-                    await self.admin_cookie_assist.handle_admin_reply(
-                        event, self.bilibili_auth_runtime
                     )
                     return
+            else:
+                links_with_parser = self.parser_manager.extract_all_links(parse_text)
+                found_direct_links = bool(links_with_parser)
+                if found_direct_links:
+                    links_with_parser = self._filter_links_by_output(
+                        links_with_parser
+                    )
+                    if not links_with_parser:
+                        return
 
-        if not zip_requested and not cfg.trigger.should_parse(original_message_text):
-            return
+                if not links_with_parser:
+                    if cfg.trigger.reply_trigger and cfg.trigger.has_keyword(
+                        original_message_text
+                    ):
+                        (
+                            links_with_parser,
+                            reply_message_id,
+                        ) = self._try_extract_reply_links(event)
+                        if reply_message_id:
+                            quote_source_message_id = reply_message_id
+                        links_with_parser = self._filter_links_by_output(
+                            links_with_parser
+                        )
+                        if links_with_parser and cfg.admin.debug_mode:
+                            self.logger.debug(
+                                f"通过回复触发解析，提取到 {len(links_with_parser)} 个链接"
+                            )
+                    if not links_with_parser:
+                        await self.admin_cookie_assist.handle_admin_reply(
+                            event, self.bilibili_auth_runtime
+                        )
+                        return
+
+            if not zip_requested and not cfg.trigger.should_parse(
+                original_message_text
+            ):
+                return
 
         rate_limit_user_key = ParseRecordManager.build_user_key(
             event.get_platform_name(),
             sender_id,
         )
-        if self.parse_record_manager.enabled:
+        if self.parse_record_manager.enabled or force_parse:
             links_with_parser, blocked_links = await asyncio.to_thread(
                 self.parse_record_manager.filter_links,
                 links_with_parser,
                 user_key=rate_limit_user_key,
+                force=force_parse,
             )
         else:
             blocked_links = []
@@ -936,6 +1069,8 @@ class VideoParserPlugin(Star):
                         "引用消息中的链接当前触发了解析频率限制，请稍后再试。"
                     )
                 )
+            elif blocked_links and cfg.parse_rate_limit.blocked_reply_enabled:
+                await event.send(event.plain_result(self._build_blocked_reply()))
             return
 
         if cfg.admin.debug_mode:

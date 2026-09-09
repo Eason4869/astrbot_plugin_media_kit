@@ -220,6 +220,12 @@
                         "default": 3600
                     }
                 }
+            },
+            "blocked_reply_enabled": {
+                "description": "被限流时提示",
+                "type": "bool",
+                "hint": "所有链接都被解析频率限制拦截时，是否回复一句提示。默认关闭，避免刷屏。",
+                "default": false
             }
         }
     },
@@ -395,6 +401,37 @@
                             "enable": true
                         },
                         "default": "流媒体解析bot为您服务 ٩( 'ω' )و"
+                    }
+                }
+            },
+            "progress": {
+                "description": "发送行为：多链接进度提示",
+                "type": "object",
+                "hint": "一条消息包含多个链接时，下载过程中发送进度提示。默认关闭。",
+                "items": {
+                    "enable": {
+                        "description": "启用",
+                        "type": "bool",
+                        "hint": "一条消息包含多个链接时，下载过程中发送进度提示。",
+                        "default": false
+                    },
+                    "min_links": {
+                        "description": "进度提示最少链接数",
+                        "type": "int",
+                        "hint": "链接数达到该值才发送进度；最小 2。",
+                        "condition": {
+                            "enable": true
+                        },
+                        "default": 2
+                    },
+                    "interval_seconds": {
+                        "description": "进度提示间隔（秒）",
+                        "type": "int",
+                        "hint": "两次进度消息的最短间隔，避免刷屏；最小 1。",
+                        "condition": {
+                            "enable": true
+                        },
+                        "default": 5
                     }
                 }
             },
@@ -935,6 +972,27 @@
                 "type": "string",
                 "hint": "管理员发送此关键词清除所有媒体缓存",
                 "default": "清理媒体"
+            },
+            "status_keyword": {
+                "description": "解析状态关键词",
+                "type": "string",
+                "hint": "管理员发送此关键词查看插件版本、启用平台、缓存与限流概况。置空则关闭。",
+                "default": "解析状态"
+            },
+            "force_parse_keyword": {
+                "description": "强制解析关键词",
+                "type": "string",
+                "hint": "引用含可解析链接的消息并发送此关键词，可绕过解析频率限制。默认仅管理员可用；置空则关闭该命令。",
+                "default": "强制解析"
+            },
+            "force_parse_admin_only": {
+                "description": "强制解析仅管理员",
+                "type": "bool",
+                "hint": "开启后仅管理员可强制解析；关闭则通过权限检查的用户也可使用。",
+                "condition": {
+                    "force_parse_keyword": true
+                },
+                "default": true
             },
             "debug": {
                 "description": "调试模式",

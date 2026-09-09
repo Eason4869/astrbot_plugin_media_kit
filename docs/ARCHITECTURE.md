@@ -115,7 +115,7 @@ astrbot_plugin_media_parser/
 `download.cache_dir` 是媒体缓存根目录，但非 Docker 环境不会直接使用用户配置值：
 
 - Docker 环境：使用配置值；为空时使用 `Config.DEFAULT_CACHE_DIR`。
-- 非 Docker 环境：优先使用 AstrBot 数据目录下的 `plugin_data/astrbot_plugin_media_parser/cache`，取不到时回退当前工作目录的 `cache/`。
+- 非 Docker 环境：优先使用 AstrBot 数据目录下的 `plugin_data/astrbot_plugin_media_kit/cache`，取不到时回退当前工作目录的 `cache/`。
 B站运行时 Cookie 文件位于当前缓存根目录下：
 
 ```text
@@ -147,6 +147,12 @@ cache/runtime_manager/bilibili/cookie.json
 - 在 `terminate()` 中关闭周期清理、延迟清理、管理员交互和下载任务；仍处于 Token TTL 内的已标记文件由下次加载后的过期扫描回收。
 
 管理员私聊发送 `admin.clean_cache_keyword`，且发送者为 `permissions.admin_id` 时，会触发 `cleanup_marked_in(cache_dir)` 主动清理媒体缓存。
+
+管理员私聊发送 `admin.status_keyword`（默认「解析状态」）时，触发 `_handle_status`：输出版本、启用平台、缓存占用概况、限流配置与 B站 Cookie 是否已配置（不打印 Cookie 内容）。
+
+管理员（或 `force_parse_admin_only=false` 时通过权限检查的用户）引用含链接的消息并发送 `admin.force_parse_keyword`（默认「强制解析」）时，走强制解析路径：从引用消息提取链接，并将 `ParseRecordManager.filter_links(..., force=True)` 完全旁路频率限制且不写入计数。
+
+`parse_rate_limit.blocked_reply_enabled` 开启后，链接全部被限流拦截时会回复提示；`message.progress` 可选在多链接下载过程中发送进度文案。
 
 ### 2.2 配置管理 `core/config_manager.py`
 

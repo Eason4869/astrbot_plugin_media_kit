@@ -307,6 +307,32 @@ class CardRenderConfig:
         return self.mode == CARD_MODE_ONLY
 
 @dataclass
+class MessageProgressConfig:
+    """多链接媒体处理进度提示。"""
+
+    enabled: bool = False
+    min_links: int = 2
+    interval_seconds: int = 5
+
+    def should_emit(
+        self,
+        *,
+        total_links: int,
+        done_count: int,
+        last_emit_at: Optional[float],
+        now: float,
+    ) -> bool:
+        """判断是否应发送一条进度提示。"""
+        if not self.enabled:
+            return False
+        if total_links < self.min_links:
+            return False
+        if last_emit_at is None:
+            return True
+        return (now - last_emit_at) >= float(self.interval_seconds)
+
+
+@dataclass
 class MessageConfig:
     opening: OpeningMessageConfig = field(default_factory=OpeningMessageConfig)
     aggregation: AggregationConfig = field(default_factory=AggregationConfig)
@@ -315,6 +341,7 @@ class MessageConfig:
     text_metadata: TextMetadataConfig = field(default_factory=TextMetadataConfig)
     hot_comments: HotCommentConfig = field(default_factory=HotCommentConfig)
     card_render: CardRenderConfig = field(default_factory=CardRenderConfig)
+    progress: MessageProgressConfig = field(default_factory=MessageProgressConfig)
 
 
 @dataclass
@@ -390,6 +417,7 @@ class ParseRateLimitConfig:
         default_factory=ParseRateLimitRuleConfig
     )
     record_file: str = ""
+    blocked_reply_enabled: bool = False
 
     @property
     def enabled(self) -> bool:
@@ -470,6 +498,9 @@ class TranslationConfig:
 @dataclass
 class AdminConfig:
     clean_cache_keyword: str = "清理媒体"
+    status_keyword: str = "解析状态"
+    force_parse_keyword: str = "强制解析"
+    force_parse_admin_only: bool = True
     debug_mode: bool = False
 
 
@@ -585,6 +616,7 @@ class ConfigManager:
         media_display = self._as_dict(message_raw.get("media_display"))
         hot_comments = self._as_dict(message_raw.get("hot_comments"))
         card_render = self._as_dict(message_raw.get("card_render"))
+        progress_raw = self._as_dict(message_raw.get("progress"))
         aggregation_thresholds = self._as_dict(aggregation.get("thresholds"))
 
         hot_count = self._parse_non_negative_int(hot_comments.get("count", 0), 0)
@@ -713,6 +745,25 @@ class ConfigManager:
                 ),
                 show_play_button=bool(
                     card_render.get("show_play_button", False)
+                ),
+            ),
+            progress=MessageProgressConfig(
+                enabled=self._parse_bool(
+                    progress_raw.get("enable", False),
+                    False,
+                    "message.progress.enable",
+                ),
+                min_links=max(
+                    2,
+                    self._parse_positive_int(
+                        progress_raw.get("min_links", 2), 2
+                    ),
+                ),
+                interval_seconds=max(
+                    1,
+                    self._parse_positive_int(
+                        progress_raw.get("interval_seconds", 5), 5
+                    ),
                 ),
             ),
         )
@@ -903,6 +954,11 @@ class ConfigManager:
             )
             if cache_dir
             else "",
+            blocked_reply_enabled=self._parse_bool(
+                rate_limit_raw.get("blocked_reply_enabled", False),
+                False,
+                "parse_rate_limit.blocked_reply_enabled",
+            ),
         )
 
         # --- bilibili_enhanced ---
@@ -1065,6 +1121,17 @@ class ConfigManager:
             clean_cache_keyword=str(
                 admin_raw.get("clean_cache_keyword", "清理媒体") or "清理媒体"
             ).strip(),
+            status_keyword=str(
+                admin_raw.get("status_keyword", "解析状态") or ""
+            ).strip(),
+            force_parse_keyword=str(
+                admin_raw.get("force_parse_keyword", "强制解析") or ""
+            ).strip(),
+            force_parse_admin_only=self._parse_bool(
+                admin_raw.get("force_parse_admin_only", True),
+                True,
+                "admin.force_parse_admin_only",
+            ),
             debug_mode=self._parse_bool(
                 admin_raw.get("debug", False),
                 False,
@@ -1107,6 +1174,61 @@ class ConfigManager:
                 "引用链接归档命令与清缓存命令冲突，已禁用归档命令；请配置两个不同命令"
             )
             self.message.archive.command = ""
+        self._resolve_admin_command_keyword_conflicts()
+
+    def _resolve_admin_command_keyword_conflicts(self) -> None:
+        """命令关键词冲突时保留高优先级命令，禁用低优先级命令。
+
+        优先级：清缓存 > 解析状态 > 强制解析 > 引用归档。
+        """
+        ordered = [
+            ("清缓存", self.admin.clean_cache_keyword),
+            ("解析状态", self.admin.status_keyword),
+            ("强制解析", self.admin.force_parse_keyword),
+            ("引用归档", self.message.archive.command),
+        ]
+        seen: Dict[str, str] = {}
+        for label, keyword in ordered:
+            if not keyword:
+                continue
+            if keyword in seen:
+                logger.warning(
+                    f"命令关键词冲突：「{keyword}」已被{seen[keyword]}占用，"
+                    f"已禁用{label}命令；请配置为不同关键词"
+                )
+                if label == "解析状态":
+                    self.admin.status_keyword = ""
+                elif label == "强制解析":
+                    self.admin.force_parse_keyword = ""
+                elif label == "引用归档":
+                    self.message.archive.command = ""
+                continue
+            seen[keyword] = label
+
+    def enabled_platform_modes(self) -> List[Tuple[str, str]]:
+        """返回非关闭平台的（配置键, 输出模式）列表，供状态展示。"""
+        display = {
+            "bilibili": "B站",
+            "douyin": "抖音",
+            "tiktok": "TikTok",
+            "kuaishou": "快手",
+            "weibo": "微博",
+            "xiaohongshu": "小红书",
+            "xianyu": "闲鱼",
+            "toutiao": "今日头条",
+            "xiaoheihe": "小黑盒",
+            "steam": "Steam",
+            "twitter": "Twitter/X",
+            "pixiv": "Pixiv",
+            "live": "B站直播",
+        }
+        items: List[Tuple[str, str]] = []
+        for key in PARSER_OUTPUT_KEYS:
+            mode = self.parser_output.modes.get(key, OUTPUT_MODE_DISABLED)
+            if mode == OUTPUT_MODE_DISABLED:
+                continue
+            items.append((display.get(key, key), mode))
+        return items
 
     # ── 工厂方法 ────────────────────────────────────────
 
