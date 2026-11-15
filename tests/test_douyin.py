@@ -6,6 +6,8 @@ import sys
 import unittest
 from unittest.mock import AsyncMock
 
+import aiohttp
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 sys.path.insert(0, os.path.dirname(_HERE))
@@ -106,6 +108,22 @@ class TestDouyinFallback(unittest.IsolatedAsyncioTestCase):
         result = await parser.parse(session, SHORT_URL)
         self.assertEqual(result["video_urls"], [[PLAY_URL]])
         self.assertEqual(session.share_requests, 3)
+
+    async def test_transient_network_and_server_errors_recover(self):
+        parser = self.make_parser()
+        session = HttpSession(aiohttp.ClientConnectionError("connection reset"),
+                              FakeResponse(status=503), FakeResponse(text_body=share_html()))
+        result = await parser.parse(session, SHORT_URL)
+        self.assertEqual(result["video_urls"], [[PLAY_URL]])
+        self.assertEqual(session.share_requests, 3)
+        parser.browser_client.fetch_detail.assert_not_awaited()
+
+    async def test_permanent_http_error_is_not_retried_before_fallback(self):
+        parser = self.make_parser()
+        session = HttpSession(FakeResponse(status=404))
+        result = await parser.parse(session, SHORT_URL)
+        self.assertEqual(result["video_urls"], [[PLAY_URL]])
+        self.assertEqual(session.share_requests, 1)
 
     async def test_wrong_browser_item_is_rejected(self):
         parser = self.make_parser({"aweme_detail": dict(ITEM, aweme_id="123")})
