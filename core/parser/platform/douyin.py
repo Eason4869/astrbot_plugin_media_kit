@@ -26,6 +26,8 @@ DOUYIN_USER_AGENT = (
 DOUYIN_REFERER = "https://www.douyin.com/"
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 MAX_REDIRECTS = 5
+SHARE_MAX_ATTEMPTS = 3
+SHARE_TIMEOUT = aiohttp.ClientTimeout(total=15)
 
 
 class DouyinParser(ShortVideoParserMixin, BaseVideoParser):
@@ -560,47 +562,63 @@ class DouyinParser(ShortVideoParserMixin, BaseVideoParser):
         else:
             url = f"https://www.iesdouyin.com/share/video/{item_id}/"
 
-        try:
-            async with session.get(url, headers=self.douyin_headers) as response:
-                if response.status >= 400:
-                    return None
-                response_text = await response.text()
-
-            json_str = self.extract_router_data(response_text)
-            if not json_str:
-                return None
-
-            json_str = json_str.replace("\\u002F", "/").replace("\\/", "/")
+        # 分享页偶尔返回 200 和完整 HTML，却没有 videoInfoRes；这不是作品失效。
+        # 复用会话 Cookie，短暂退避后重试，避免一次不完整 SSR 就直接报错。
+        for attempt in range(SHARE_MAX_ATTEMPTS):
+            if attempt:
+                await asyncio.sleep(0.3 * attempt)
             try:
-                json_data = json.loads(json_str)
-            except Exception:
-                return None
+                async with session.get(
+                    url, headers=self.douyin_headers, timeout=SHARE_TIMEOUT
+                ) as response:
+                    if response.status >= 400:
+                        if response.status in {408, 429} or response.status >= 500:
+                            continue
+                        return None
+                    response_text = await response.text()
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                logger.debug(
+                    f"[{self.name}] 分享页网络异常，尝试 {attempt + 1}/{SHARE_MAX_ATTEMPTS}",
+                    exc_info=True,
+                )
+                continue
 
-            loader_data = json_data.get("loaderData", {})
-            video_info = None
-            for value in loader_data.values():
-                if isinstance(value, dict) and "videoInfoRes" in value:
-                    video_info = value["videoInfoRes"]
-                    break
-                if isinstance(value, dict) and "noteDetailRes" in value:
-                    video_info = value["noteDetailRes"]
-                    break
-                if isinstance(value, dict) and "slidesInfoRes" in value:
-                    video_info = value["slidesInfoRes"]
-                    break
-
-            if not video_info:
-                return None
-
-            item_info = self._extract_douyin_item_from_info(
-                video_info,
-                item_id,
+            result = self._extract_douyin_share_info(response_text, item_id)
+            if result:
+                return result
+            logger.debug(
+                f"[{self.name}] 分享页缺少目标作品数据，"
+                f"尝试 {attempt + 1}/{SHARE_MAX_ATTEMPTS}，作品 {item_id}"
             )
-            if not item_info:
-                return None
-            return self._build_douyin_result_from_item(item_info)
-        except (aiohttp.ClientError, asyncio.TimeoutError):
+        return None
+
+    def _extract_douyin_share_info(
+        self, response_text: str, item_id: str
+    ) -> Optional[Dict[str, Any]]:
+        json_str = self.extract_router_data(response_text)
+        if not json_str:
             return None
+        try:
+            json_data = json.loads(json_str)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(json_data, dict):
+            return None
+        loader_data = json_data.get("loaderData")
+        if not isinstance(loader_data, dict):
+            return None
+
+        for value in loader_data.values():
+            if not isinstance(value, dict):
+                continue
+            for key in ("videoInfoRes", "noteDetailRes", "slidesInfoRes"):
+                video_info = value.get(key)
+                if not isinstance(video_info, dict):
+                    continue
+                item_info = self._extract_douyin_item_from_info(video_info, item_id)
+                if item_info:
+                    return self._build_douyin_result_from_item(item_info)
+        return None
 
     @classmethod
     def _is_short_redirect_url(cls, url: str) -> bool:

@@ -99,7 +99,7 @@ _STAT_LABELS = {
 
 
 # 卡片样式版本：视觉样式变化时 +1，使已缓存的旧卡片失效并重新渲染
-_CARD_STYLE_VERSION = "13"
+_CARD_STYLE_VERSION = "14"
 
 
 def strip_emoji(text: str | None) -> str:
@@ -1050,7 +1050,7 @@ class ShareCardRenderer:
             y += quote_h + 20
         y += _L.FOOTER_H
         card_h = y
-        total_h = card_h + 14
+        total_h = card_h
 
         # ================= 绘制底层 =================
         canvas = Image.new("RGBA", (self.width, total_h), (0, 0, 0, 0))
@@ -1582,7 +1582,7 @@ class ShareCardRenderer:
 
     def _base_canvas(self, theme: _Theme, accent_rgb: tuple[int, int, int], card_h: int):
         """阴影 + 渐变底 + 光晕 + 圆角 + 描边，返回 (canvas, draw)。"""
-        total_h = card_h + 14
+        total_h = card_h
         canvas = Image.new("RGBA", (self.width, total_h), (0, 0, 0, 0))
         shadow = Image.new("RGBA", (self.width, total_h), (0, 0, 0, 0))
         ImageDraw.Draw(shadow).rounded_rectangle(
@@ -2083,8 +2083,6 @@ class ShareCardRenderer:
             stack += warnings_h + 16
         stack += _L.FOOTER_H
         card_h = hero_h + stack
-        total_h = card_h + 14
-
         canvas, draw = self._base_canvas(theme, accent_rgb, card_h)
 
         # 封面铺满上部
