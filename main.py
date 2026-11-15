@@ -966,15 +966,15 @@ class VideoParserPlugin(Star):
                 self.logger.debug(
                     f"强制解析命中，提取到 {len(links_with_parser)} 个链接，跳过频率限制"
                 )
-        elif not cfg.parser_output.has_any_output():
-            if cfg.admin.debug_mode:
-                self.logger.debug("文本元数据和富媒体均关闭，跳过解析")
-            return
-
         if not force_parse:
             if await self.admin_cookie_assist.handle_admin_command(
                 event, self.bilibili_auth_runtime
             ):
+                return
+
+            if not cfg.parser_output.has_any_output():
+                if cfg.admin.debug_mode:
+                    self.logger.debug("文本元数据和富媒体均关闭，跳过解析")
                 return
 
             card_urls = self._extract_urls_from_json_cards(event)
@@ -1107,7 +1107,7 @@ class VideoParserPlugin(Star):
             metadata_list = await self.parser_manager.parse_text(
                 parse_text, session, links_with_parser=links_with_parser
             )
-            if self.parse_record_manager.same_link.enabled:
+            if not force_parse and self.parse_record_manager.same_link.enabled:
                 await asyncio.to_thread(
                     self.parse_record_manager.record_metadata_links,
                     metadata_list,
