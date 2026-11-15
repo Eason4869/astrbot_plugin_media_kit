@@ -186,10 +186,15 @@ class ParseRecordManager:
         *,
         user_key: str,
         now: Optional[float] = None,
+        force: bool = False,
     ) -> Tuple[List[Tuple[str, Any]], List[BlockedParseItem]]:
-        """返回允许解析的链接，并记录本次允许的解析尝试。"""
-        if not self.enabled or not links_with_parser:
-            return links_with_parser, []
+        """返回允许解析的链接，并记录本次允许的解析尝试。
+
+        Args:
+            force: 为 True 时完全旁路频率限制，且不写入本次计数记录。
+        """
+        if force or not self.enabled or not links_with_parser:
+            return list(links_with_parser or []), []
 
         current = int(now or time.time())
         normalized_user_key = str(user_key or "unknown").strip() or "unknown"

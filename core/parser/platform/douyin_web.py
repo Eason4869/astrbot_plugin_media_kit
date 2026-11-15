@@ -186,6 +186,11 @@ class DouyinWebClient:
                 timeout=REQUEST_TIMEOUT,
             ) as response:
                 if response.status in {401, 403}:
+                    body = await response.text()
+                    if "ArgusSecurityPlugin" in body:
+                        # 缺少浏览器访客标识/签名时，刷新 ttwid 不会改变结果。
+                        # 交给上层的分享页和正常浏览器回退，避免重复注册请求。
+                        return None, False
                     return None, True
                 if response.status >= 400:
                     return None, False
