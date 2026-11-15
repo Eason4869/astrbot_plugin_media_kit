@@ -832,6 +832,24 @@
             }
         }
     },
+    "douyin": {
+        "description": "抖音设置",
+        "type": "object",
+        "hint": "HTTP 解析受风控限制时，可使用本机 Chromium、Chrome 或 Edge 获取作品数据；无需登录。",
+        "items": {
+            "browser_fallback": {
+                "description": "启用浏览器回退",
+                "type": "bool",
+                "default": true
+            },
+            "browser_path": {
+                "description": "浏览器可执行文件路径",
+                "type": "string",
+                "hint": "留空自动查找已安装的 Chromium、Chrome 或 Edge。Linux 需安装 Chromium 并满足其沙箱运行条件；不自动操作人工验证码。",
+                "default": ""
+            }
+        }
+    },
     "pixiv": {
         "description": "Pixiv 设置",
         "type": "object",

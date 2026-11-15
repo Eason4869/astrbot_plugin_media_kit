@@ -467,6 +467,12 @@ class PixivConfig:
 
 
 @dataclass
+class DouyinConfig:
+    browser_fallback: bool = True
+    browser_path: str = ""
+
+
+@dataclass
 class SteamConfig:
     use_xiaoheihe: bool = False
 
@@ -1042,6 +1048,13 @@ class ConfigManager:
             admin_cookie_update_command=admin_cookie_update_command,
         )
 
+        # --- douyin ---
+        douyin_raw = self._as_dict(config.get("douyin"))
+        self.douyin = DouyinConfig(
+            browser_fallback=self._parse_bool(douyin_raw.get("browser_fallback", True), True, "douyin.browser_fallback"),
+            browser_path=str(douyin_raw.get("browser_path", "") or "").strip(),
+        )
+
         # --- pixiv ---
         pixiv_raw = config.get("pixiv", {})
         if not isinstance(pixiv_raw, dict):
@@ -1275,7 +1288,7 @@ class ConfigManager:
             )
             parsers.append(self.bilibili_parser)
         if self._enable_douyin:
-            parsers.append(DouyinParser())
+            parsers.append(DouyinParser(browser_fallback=self.douyin.browser_fallback, browser_path=self.douyin.browser_path))
         if self._enable_tiktok:
             parsers.append(
                 TikTokParser(

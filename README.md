@@ -9,7 +9,7 @@ _✨ 自动解析流媒体平台链接，先发信息卡片，再聚合发送媒
 [![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-orange.svg)](https://github.com/AstrBotDevs/AstrBot)
-[![Version](https://img.shields.io/badge/Version-v1.2.0--beta-green.svg)](https://github.com/Eason4869/astrbot_plugin_media_kit)
+[![Version](https://img.shields.io/badge/Version-v1.2.1-green.svg)](https://github.com/Eason4869/astrbot_plugin_media_kit)
 
 </div>
 
@@ -229,6 +229,15 @@ Steam / 小黑盒媒体多走 Steam CDN，下载速度不佳时可在 `代理设
 - **建议缓存目录**：TikTok、小红书（媒体有时效与鉴权）。
 - Docker 部署请把缓存目录配置为协议端可访问的共享目录；非 Docker 环境自动使用 AstrBot 插件数据目录。
 - TikTok / Twitter / Pixiv 等受地区与风控影响明显，必要时在 `代理设置` 配置代理。媒体连接只允许公网地址，显式配置的代理视为受信端点；Clash/TUN 的 `fake-ip` 模式可能把域名映射到保留网段被安全策略拒绝，请改用 `redir-host` / 真实 DNS。
+
+### 抖音浏览器回退
+
+HTTP 解析遇到风控或无法取得作品数据时，默认使用本机 **Chromium / Chrome / Edge** 打开作品页并读取页面自身的详情响应。每次使用独立临时访客目录，不读取已有浏览器账号，不需要登录；同时最多运行一个回退会话，解析等待最多 30 秒，完成或取消后关闭浏览器。站点仍可能要求人工验证，该场景会返回明确的超时提示，不保证所有账号、网络和作品都能解析。
+
+- Windows 自动查找已安装的 Chrome / Edge；macOS 查找标准应用路径；Linux 查找 PATH 内的 Chromium / Chrome / Edge。
+- Linux / Docker 需在 **AstrBot 所在环境**安装 Chromium，浏览器必须能在当前用户下正常启动并使用沙箱。推荐以普通用户运行；插件不会自动关闭浏览器沙箱。
+- 可在 `抖音设置` 指定浏览器可执行文件路径，或关闭浏览器回退。没有浏览器时，正常 HTTP 解析仍可使用；只有需要回退时才提示安装。
+- 浏览器使用部署环境的正常网络，详情数据取得后，视频仍走插件现有下载流程。视频地址有时效，建议使用可用的媒体缓存目录。
 
 ---
 

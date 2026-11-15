@@ -15,6 +15,7 @@ from ...logger import logger
 from ..utils import SkipParse, build_request_headers, is_live_url
 from .base import BaseVideoParser
 from .douyin_web import DouyinWebClient
+from .douyin_browser import DouyinBrowserClient
 from .short_video_shared import ShortVideoParserMixin
 
 
@@ -26,12 +27,13 @@ DOUYIN_USER_AGENT = (
 DOUYIN_REFERER = "https://www.douyin.com/"
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 MAX_REDIRECTS = 5
+SHARE_TIMEOUT = aiohttp.ClientTimeout(total=15)
 
 
 class DouyinParser(ShortVideoParserMixin, BaseVideoParser):
     """抖音解析器实现。"""
 
-    def __init__(self):
+    def __init__(self, *, browser_fallback: bool = True, browser_path: str = ""):
         super().__init__("douyin")
         self.douyin_headers = {
             "User-Agent": DOUYIN_USER_AGENT,
@@ -40,6 +42,7 @@ class DouyinParser(ShortVideoParserMixin, BaseVideoParser):
         }
         self.semaphore = asyncio.Semaphore(Config.PARSER_MAX_CONCURRENT)
         self.web_client = DouyinWebClient()
+        self.browser_client = DouyinBrowserClient(enabled=browser_fallback, executable=browser_path)
 
     @classmethod
     def _is_douyin_url(cls, url: str) -> bool:
@@ -560,47 +563,57 @@ class DouyinParser(ShortVideoParserMixin, BaseVideoParser):
         else:
             url = f"https://www.iesdouyin.com/share/video/{item_id}/"
 
-        try:
-            async with session.get(url, headers=self.douyin_headers) as response:
-                if response.status >= 400:
-                    return None
-                response_text = await response.text()
-
-            json_str = self.extract_router_data(response_text)
-            if not json_str:
-                return None
-
-            json_str = json_str.replace("\\u002F", "/").replace("\\/", "/")
+        for attempt in range(3):
+            if attempt:
+                await asyncio.sleep(0.3 * attempt)
             try:
-                json_data = json.loads(json_str)
-            except Exception:
-                return None
+                async with session.get(url, headers=self.douyin_headers, timeout=SHARE_TIMEOUT) as response:
+                    if response.status >= 400:
+                        if response.status in {408, 429} or response.status >= 500:
+                            continue
+                        break
+                    response_text = await response.text()
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                logger.debug(f"[{self.name}] 分享页请求失败，尝试 {attempt + 1}/3", exc_info=True)
+                continue
+            result = self._extract_douyin_share_info(response_text, item_id)
+            if result:
+                return result
+            if "TTGCaptcha" in response_text or "验证中间页" in response_text:
+                logger.debug(f"[{self.name}] 分享页要求验证，转浏览器回退")
+                break
+            logger.debug(f"[{self.name}] 分享页缺少目标作品，尝试 {attempt + 1}/3")
 
-            loader_data = json_data.get("loaderData", {})
-            video_info = None
-            for value in loader_data.values():
-                if isinstance(value, dict) and "videoInfoRes" in value:
-                    video_info = value["videoInfoRes"]
-                    break
-                if isinstance(value, dict) and "noteDetailRes" in value:
-                    video_info = value["noteDetailRes"]
-                    break
-                if isinstance(value, dict) and "slidesInfoRes" in value:
-                    video_info = value["slidesInfoRes"]
-                    break
+        data, user_agent = await self.browser_client.fetch_detail(
+            item_id, "note" if is_note or is_slides else "video"
+        )
+        item_info = self._extract_douyin_item_from_info(data, item_id)
+        if not item_info:
+            raise RuntimeError("抖音浏览器未返回目标作品数据")
+        result = self._build_douyin_result_from_item(item_info)
+        result["user_agent"] = user_agent
+        return result
 
-            if not video_info:
-                return None
-
-            item_info = self._extract_douyin_item_from_info(
-                video_info,
-                item_id,
-            )
-            if not item_info:
-                return None
-            return self._build_douyin_result_from_item(item_info)
-        except (aiohttp.ClientError, asyncio.TimeoutError):
+    def _extract_douyin_share_info(self, response_text: str, item_id: str) -> Optional[Dict[str, Any]]:
+        json_str = self.extract_router_data(response_text)
+        if not json_str:
             return None
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(data, dict) or not isinstance(data.get("loaderData"), dict):
+            return None
+        for value in data["loaderData"].values():
+            if not isinstance(value, dict):
+                continue
+            for key in ("videoInfoRes", "noteDetailRes", "slidesInfoRes"):
+                info = value.get(key)
+                if isinstance(info, dict):
+                    item = self._extract_douyin_item_from_info(info, item_id)
+                    if item:
+                        return self._build_douyin_result_from_item(item)
+        return None
 
     @classmethod
     def _is_short_redirect_url(cls, url: str) -> bool:
