@@ -49,6 +49,7 @@ class MediaMetadata(TypedDict, total=False):
     product_info: Dict[str, Any]
     github_info: Dict[str, Any]
     detail_text: str
+    detail_text_visible: bool
     ai_summary: str
 
     use_image_proxy: bool

@@ -10,6 +10,7 @@ import html
 import json
 import re
 import time
+import aiohttp
 from urllib.parse import quote, unquote, urljoin, urlsplit
 
 from .base import BaseVideoParser
@@ -50,7 +51,8 @@ def identify_link(url):
 
 
 class GitHubParser(BaseVideoParser):
-    supports_detail = True
+    # GitHub enriches ordinary links automatically; the quoted detail command is for products.
+    supports_detail = False
 
     def __init__(self, token="", use_parse_proxy=False, use_image_proxy=True, proxy_url=None):
         super().__init__("github")
@@ -135,7 +137,7 @@ class GitHubParser(BaseVideoParser):
             self._cache.popitem(last=False)
 
     async def parse(self, session, url):
-        return await self._parse(session, url, detail=False)
+        return await self._parse(session, url, detail=True)
 
     async def parse_detail(self, session, url):
         return await self._parse(session, url, detail=True)
@@ -196,12 +198,13 @@ class GitHubParser(BaseVideoParser):
                     source = (base64.b64decode(content).decode("utf-8", errors="replace")
                               if readme.get("encoding") == "base64" else content)
                     if not source:
-                        source = "README 正文暂未获取，可能超过接口内容大小限制；请查看原链接。"
+                        lines.append("README 正文暂未获取，可能超过接口内容大小限制；请查看原链接。")
                     image_base = (f"https://raw.githubusercontent.com/{owner}/{name}/"
                                   f"{quote(repo.get('default_branch') or 'main', safe='')}/"
                                   + str(readme.get("path") or "README.md"))
-                except RuntimeError as exc:
-                    source = f"README 暂未获取：{exc}"
+                except (RuntimeError, aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+                    source = ""
+                    lines.append("README 暂未获取，已保留仓库信息。")
         elif kind in {"issue", "pull"}:
             endpoint = "issues" if kind == "issue" else "pulls"
             item = await self._get(session, f"{root}/{endpoint}/{identifier}")
@@ -242,8 +245,9 @@ class GitHubParser(BaseVideoParser):
                         for comment in comments[-10:]:
                             source += f"\n\n{(comment.get('user') or {}).get('login', '')}：{comment.get('body') or ''}"
                         info["truncated"] = total > 10
-                except RuntimeError as exc:
-                    source += f"\n\n补充详情暂未获取：{exc}"
+                except (RuntimeError, aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+                    info["truncated"] = True
+                    source += "\n\n补充详情暂未获取，以上仅包含已取得的正文。"
         else:
             suffix = "latest" if identifier == "latest" else "tags/" + quote(identifier, safe="")
             release = await self._get(session, f"{root}/releases/{suffix}")
@@ -273,6 +277,7 @@ class GitHubParser(BaseVideoParser):
                   "github_info": info}
         if detail:
             result["detail_text"] = source
+            result["detail_text_visible"] = False
             result["image_urls"] = [[image] for image in extract_images(source, image_base)]
         return result
 
@@ -291,7 +296,9 @@ def extract_images(markdown, base_url):
         except (ValueError, TypeError):
             continue
         if (parsed.scheme not in {"http", "https"} or parsed.username or parsed.password
-                or not parsed.hostname or re.search(r"shield|badge|travis|codecov|tracking|pixel", url, re.I)):
+                or not parsed.hostname or parsed.path.lower().endswith(".svg")
+                or parsed.hostname.startswith("sponsors.")
+                or re.search(r"shield|badge|travis|codecov|tracking|pixel|star-history", url, re.I)):
             continue
         if url not in images:
             images.append(url)

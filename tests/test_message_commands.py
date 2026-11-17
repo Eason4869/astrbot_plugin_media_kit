@@ -87,6 +87,26 @@ def plugin(manager, *, outputs=True):
 
 
 class TestMessageCommands(unittest.IsolatedAsyncioTestCase):
+    async def test_github_link_automatically_sends_ai_summary_without_detail_command(self):
+        instance = plugin(ParseRecordManager())
+        instance.config_manager.github = SimpleNamespace(summary_enabled=True)
+        metadata = {"url": "https://github.com/acme/demo", "platform": "github",
+                    "title": "acme/demo", "detail_text": "README source"}
+        instance.parser_manager.parse_text.return_value = [metadata]
+        instance._metadata_has_output_candidate = lambda item: True
+        instance._start_translation_task = lambda *args: (None, [])
+        instance._process_and_send_metadata = AsyncMock()
+        instance._cancel_translation_task = AsyncMock()
+        instance._event_context = lambda message: {}
+        instance.github_summarizer = SimpleNamespace(summarize=AsyncMock(return_value="自动生成的摘要"))
+        message = event(metadata["url"])
+        message.send = AsyncMock()
+        message.plain_result = lambda text: text
+        await load_handler()(instance, message)
+        instance.github_summarizer.summarize.assert_awaited_once()
+        self.assertIn("自动生成的摘要", message.send.call_args.args[0])
+        self.assertNotIn("README source", message.send.call_args.args[0])
+
     async def test_detail_command_dispatches_and_has_its_own_link_quota(self):
         manager = ParseRecordManager(same_link_max_count=1, same_link_window_seconds=3600)
         instance = plugin(manager)

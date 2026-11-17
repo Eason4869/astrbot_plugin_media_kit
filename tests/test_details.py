@@ -6,7 +6,7 @@ import support
 from core.config_manager import ConfigManager
 from core.parser.manager import ParserManager
 from core.storage.parse_record import ParseRecordManager
-from core.parser.platform.github import GitHubParser
+from core.parser.platform.jd import JDParser
 from core.rika_render.adapter import _parse_timestamp
 
 
@@ -15,7 +15,7 @@ class TestDetails(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_parse_timestamp("2026-11-17T00:00:00Z"), 1794873600)
 
     async def test_detail_dispatch_and_legacy_compatibility(self):
-        parser = GitHubParser()
+        parser = JDParser()
         parser.parse = AsyncMock(return_value={"title": "card"})
         parser.parse_detail = AsyncMock(return_value={"title": "details"})
         manager = ParserManager([parser])

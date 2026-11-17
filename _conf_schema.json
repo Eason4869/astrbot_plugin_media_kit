@@ -534,7 +534,7 @@
     "github": {
         "description": "GitHub 设置",
         "type": "object",
-        "hint": "普通链接只返回事实卡片，引用后发送“详细解析”获取正文、图片及可选 AI 摘要。仅支持公开资源。",
+        "hint": "发送链接自动生成信息卡片、正文配图及可选 AI 摘要，无需详细解析命令，不发送长篇原文。仅支持公开资源。",
         "items": {
             "token": {
                 "description": "GitHub Token（可选）",
@@ -543,9 +543,9 @@
                 "default": ""
             },
             "summary_enabled": {
-                "description": "详细解析时生成 AI 摘要",
+                "description": "自动生成 AI 摘要",
                 "type": "bool",
-                "hint": "默认使用当前会话模型；可复用“文本翻译”的模型连接配置，无需开启翻译。摘要不可用时仍发送原始详情。",
+                "hint": "发送 GitHub 链接后自动生成摘要，默认使用当前会话模型；可复用文本翻译的模型连接，无需开启翻译。摘要不可用时保留卡片和图片。",
                 "default": true
             },
             "summary_provider_id": {

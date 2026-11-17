@@ -527,7 +527,7 @@ def _build_node_parts_for_link(
         nodes.extend(text_nodes)
     nodes.extend(hot_comments_nodes)
     detail_text = str(metadata.get("detail_text") or "").strip()
-    if effective_text_metadata and detail_text:
+    if effective_text_metadata and detail_text and metadata.get("detail_text_visible", True):
         nodes.extend(_split_plain_node(Plain("详细解析：\n" + detail_text[:24000])))
     nodes.extend(media_nodes)
 
