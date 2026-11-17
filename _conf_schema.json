@@ -4,6 +4,18 @@
         "type": "object",
         "hint": "关闭=不解析该平台；仅文本=只发送摘要文本；仅富媒体=只发送图片/视频。仅文本仍受“消息输出 → 文本元数据”开关控制。",
         "items": {
+            "github": {
+                "description": "GitHub",
+                "type": "string",
+                "options": ["关闭", "全部发送", "仅文本", "仅富媒体"],
+                "default": "全部发送"
+            },
+            "jd": {
+                "description": "京东",
+                "type": "string",
+                "options": ["关闭", "全部发送", "仅文本", "仅富媒体"],
+                "default": "全部发送"
+            },
             "bilibili": {
                 "description": "B站",
                 "type": "string",
@@ -507,6 +519,44 @@
             }
         }
     },
+    "jd": {
+        "description": "京东设置",
+        "type": "object",
+        "hint": "默认商品卡片，引用后发送“详细解析”获取主图和详情图。参考价格缺失时明确标注。",
+        "items": {
+            "browser_fallback": {"description": "启用隔离浏览器回退", "type": "bool", "default": true},
+            "browser_path": {
+                "description": "浏览器路径（可选）", "type": "string", "default": "",
+                "hint": "留空自动寻找 Chromium/Chrome/Edge。使用临时访客目录，不读取已有登录状态。"
+            }
+        }
+    },
+    "github": {
+        "description": "GitHub 设置",
+        "type": "object",
+        "hint": "普通链接只返回事实卡片，引用后发送“详细解析”获取正文、图片及可选 AI 摘要。仅支持公开资源。",
+        "items": {
+            "token": {
+                "description": "GitHub Token（可选）",
+                "type": "string",
+                "hint": "可留空，匿名解析公开资源。填写只读 Token 可提高 API 额度；不会开放私有资源解析。",
+                "default": ""
+            },
+            "summary_enabled": {
+                "description": "详细解析时生成 AI 摘要",
+                "type": "bool",
+                "hint": "默认使用当前会话模型；可复用“文本翻译”的模型连接配置，无需开启翻译。摘要不可用时仍发送原始详情。",
+                "default": true
+            },
+            "summary_provider_id": {
+                "description": "摘要专用 AstrBot 模型（可选）",
+                "type": "string",
+                "_special": "select_provider",
+                "hint": "留空复用现有模型连接；选择后仅覆盖 GitHub 摘要使用的模型。",
+                "default": ""
+            }
+        }
+    },
     "translation": {
         "description": "文本翻译",
         "type": "object",
@@ -926,6 +976,15 @@
                 "hint": "需要先填写“代理地址”。",
                 "default": false
             },
+            "github": {
+                "description": "GitHub 代理",
+                "type": "object",
+                "hint": "复用上方代理地址，与 Token 独立。解析代理控制 API 请求，图片代理控制头像及正文图片下载。",
+                "items": {
+                    "parse": {"description": "解析", "type": "bool", "default": false},
+                    "image": {"description": "图片下载", "type": "bool", "default": true}
+                }
+            },
             "twitter": {
                 "description": "Twitter 代理",
                 "type": "object",
@@ -1011,6 +1070,12 @@
                     "force_parse_keyword": true
                 },
                 "default": true
+            },
+            "detail_parse_keyword": {
+                "description": "详细解析关键词",
+                "type": "string",
+                "hint": "引用支持详细解析的链接消息后发送；遵守平台输出与权限、用户限流。置空关闭。",
+                "default": "详细解析"
             },
             "debug": {
                 "description": "调试模式",

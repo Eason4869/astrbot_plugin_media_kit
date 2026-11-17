@@ -104,9 +104,9 @@ class DouyinBrowserClient:
                         pages = await response.json()
                     page = next(page for page in pages if page.get("type") == "page")
                     async with session.ws_connect(page["webSocketDebuggerUrl"], max_msg_size=8 * 1024 * 1024) as ws:
-                        await ws.send_json({"id": 1, "method": "Network.enable"})
+                        await self._configure_page(ws)
                         await ws.send_json({"id": 2, "method": "Page.navigate", "params": {
-                            "url": f"https://www.douyin.com/{media_type}/{item_id}"
+                            "url": self._navigation_url(item_id, media_type)
                         }})
                         await ws.send_json({"id": 3, "method": "Browser.getVersion"})
                         return await self._read_detail(ws, item_id)
@@ -122,6 +122,12 @@ class DouyinBrowserClient:
                     except asyncio.CancelledError:
                         await cleanup
                         raise
+
+    def _navigation_url(self, item_id, media_type):
+        return f"https://www.douyin.com/{media_type}/{item_id}"
+
+    async def _configure_page(self, ws):
+        await ws.send_json({"id": 1, "method": "Network.enable"})
 
     @staticmethod
     async def _stop_browser(process, browser_ws: str):

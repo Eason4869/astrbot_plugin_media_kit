@@ -175,8 +175,10 @@ class ParseRecordManager:
         return urlunparse((scheme, host, path, "", query, ""))
 
     @classmethod
-    def build_link_key(cls, url: str, parser_name: Any = "") -> str:
+    def build_link_key(cls, url: str, parser_name: Any = "", *, mode: str = "normal") -> str:
         parser = str(parser_name or "unknown").strip() or "unknown"
+        if mode == "detail":
+            parser += ":detail"
         canonical = cls.canonicalize_url(url)
         return f"{parser}:{canonical}" if canonical else ""
 
@@ -187,6 +189,7 @@ class ParseRecordManager:
         user_key: str,
         now: Optional[float] = None,
         force: bool = False,
+        mode: str = "normal",
     ) -> Tuple[List[Tuple[str, Any]], List[BlockedParseItem]]:
         """返回允许解析的链接，并记录本次允许的解析尝试。
 
@@ -208,7 +211,7 @@ class ParseRecordManager:
 
             for link, parser in links_with_parser:
                 parser_name = getattr(parser, "name", "") or "unknown"
-                link_key = self.build_link_key(link, parser_name)
+                link_key = self.build_link_key(link, parser_name, mode=mode)
                 if self.same_link.enabled and link_key:
                     link_count = self._count_recent(
                         "links",
@@ -262,6 +265,7 @@ class ParseRecordManager:
         metadata_list: Iterable[Dict[str, Any]],
         *,
         now: Optional[float] = None,
+        mode: str = "normal",
     ) -> None:
         """解析完成后记录平台返回的最终链接别名。"""
         if not self.same_link.enabled:
@@ -284,8 +288,8 @@ class ParseRecordManager:
                 )
                 source_url = metadata.get("source_url") or ""
                 final_url = metadata.get("url") or ""
-                source_key = self.build_link_key(source_url, parser_name)
-                final_key = self.build_link_key(final_url, parser_name)
+                source_key = self.build_link_key(source_url, parser_name, mode=mode)
+                final_key = self.build_link_key(final_url, parser_name, mode=mode)
                 if (
                     not final_key or
                     final_key == source_key or

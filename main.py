@@ -45,6 +45,7 @@ from .core.message_adapter.archive_builder import (
     cleanup_zip_archive,
 )
 from .core.translation import MetadataTranslator
+from .core.github_summary import GitHubSummarizer
 from .core.config_manager import ConfigManager
 from .core.interaction.platform.bilibili import BilibiliAdminCookieAssistManager
 from .core.arbiter import (
@@ -75,6 +76,10 @@ class VideoParserPlugin(Star):
         self.metadata_translator = MetadataTranslator(
             cfg.translation,
             self.context,
+        )
+        self.github_summarizer = GitHubSummarizer(
+            cfg.translation, self.context, enabled=cfg.github.summary_enabled,
+            provider_id=cfg.github.summary_provider_id,
         )
         self.bilibili_auth_runtime = (
             self.bilibili_parser.get_auth_runtime() if self.bilibili_parser else None
@@ -945,7 +950,21 @@ class VideoParserPlugin(Star):
             return
 
         force_parse = False
+        detail_requested = False
         zip_requested = False
+        detail_kw = getattr(cfg.admin, "detail_parse_keyword", "")
+        if detail_kw and original_message_text.strip() == detail_kw:
+            links_with_parser, reply_message_id = self._try_extract_reply_links(event)
+            links_with_parser = self._filter_links_by_output(links_with_parser)
+            links_with_parser = [(link, parser) for link, parser in links_with_parser
+                                 if getattr(parser, "supports_detail", False)]
+            if not links_with_parser:
+                await event.send(event.plain_result(
+                    "请引用包含支持详细解析的平台链接的消息，再发送详细解析命令。"))
+                return
+            if reply_message_id:
+                quote_source_message_id = reply_message_id
+            detail_requested = True
         force_kw = cfg.admin.force_parse_keyword
         if force_kw and original_message_text.strip() == force_kw:
             if cfg.admin.force_parse_admin_only and not self._is_admin_sender(sender_id):
@@ -966,7 +985,7 @@ class VideoParserPlugin(Star):
                 self.logger.debug(
                     f"强制解析命中，提取到 {len(links_with_parser)} 个链接，跳过频率限制"
                 )
-        if not force_parse:
+        if not force_parse and not detail_requested:
             if await self.admin_cookie_assist.handle_admin_command(
                 event, self.bilibili_auth_runtime
             ):
@@ -1051,6 +1070,7 @@ class VideoParserPlugin(Star):
                 links_with_parser,
                 user_key=rate_limit_user_key,
                 force=force_parse,
+                mode="detail" if detail_requested else "normal",
             )
         else:
             blocked_links = []
@@ -1104,13 +1124,15 @@ class VideoParserPlugin(Star):
             timeout=timeout,
             connector=connector,
         ) as session:
+            parse_options = {"detail": True} if detail_requested or zip_requested else {}
             metadata_list = await self.parser_manager.parse_text(
-                parse_text, session, links_with_parser=links_with_parser
+                parse_text, session, links_with_parser=links_with_parser, **parse_options
             )
             if not force_parse and self.parse_record_manager.same_link.enabled:
                 await asyncio.to_thread(
                     self.parse_record_manager.record_metadata_links,
                     metadata_list,
+                    mode="detail" if detail_requested else "normal",
                 )
             self._trigger_bilibili_cookie_assist_if_needed()
             if not metadata_list:
@@ -1143,6 +1165,11 @@ class VideoParserPlugin(Star):
             )
 
             if not has_valid_metadata:
+                if detail_requested:
+                    await event.send(event.plain_result("当前输出模式没有可发送的详情；请检查平台的文本／富媒体开关。"))
+                elif any(metadata.get("platform") in {"github", "jd"}
+                         and not metadata.get("error") for metadata in metadata_list):
+                    await event.send(event.plain_result("当前为仅富媒体模式，普通链接不发送卡片；可引用链接发送详细解析，或开启文本元数据。"))
                 if cfg.admin.debug_mode:
                     self.logger.debug(
                         "解析后未获得任何有效元数据（可能是直播链接或解析失败）"
@@ -1172,6 +1199,17 @@ class VideoParserPlugin(Star):
                     translation_task=translation_task,
                     translation_metadata_list=translation_metadata_list,
                 )
+                if detail_requested and cfg.github.summary_enabled:
+                    for metadata in metadata_list:
+                        if (metadata.get("platform") != "github" or metadata.get("error")
+                                or not metadata.get("_enable_text_metadata", True)):
+                            continue
+                        summary = await self.github_summarizer.summarize(metadata, self._event_context(event))
+                        if summary:
+                            metadata["ai_summary"] = summary
+                            await event.send(event.plain_result(f"AI 摘要 · {metadata.get('title', 'GitHub')}\n{summary}"))
+                        elif metadata.get("detail_text"):
+                            await event.send(event.plain_result("AI 摘要暂不可用，以上为已获取的原始详情。"))
                 if emoji_cfg.feedback_enabled:
                     await mark_parse_success(event, emoji_cfg.success_emoji_id)
             finally:

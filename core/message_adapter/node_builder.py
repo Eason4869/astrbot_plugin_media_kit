@@ -526,6 +526,9 @@ def _build_node_parts_for_link(
         # fallback instead of silently dropping metadata.
         nodes.extend(text_nodes)
     nodes.extend(hot_comments_nodes)
+    detail_text = str(metadata.get("detail_text") or "").strip()
+    if effective_text_metadata and detail_text:
+        nodes.extend(_split_plain_node(Plain("详细解析：\n" + detail_text[:24000])))
     nodes.extend(media_nodes)
 
     metadata_text_node = text_nodes[0] if text_nodes else None

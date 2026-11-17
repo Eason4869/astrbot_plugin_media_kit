@@ -13,6 +13,8 @@ from .twitter import TwitterParser
 from .pixiv import PixivParser
 from .bili_live import BiliLiveParser
 from .base import BaseVideoParser
+from .github import GitHubParser
+from .jd import JDParser
 
 __all__ = [
     'BilibiliParser',
@@ -28,6 +30,8 @@ __all__ = [
     'TwitterParser',
     'PixivParser',
     'BiliLiveParser',
+    'GitHubParser',
+    'JDParser',
     'BaseVideoParser'
 ]
 

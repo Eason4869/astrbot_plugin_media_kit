@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+import hashlib
+import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -51,6 +53,10 @@ async def render_card_rika(
         )
         url_key = str(metadata.get("url") or "")
         parts = [url_key]
+        # A stable URL can have a new title, price, state or statistics.
+        visible = {key: metadata.get(key) for key in
+                   ("title", "desc", "author", "timestamp", "stats_line", "product_info", "github_info")}
+        parts.append(hashlib.sha256(json.dumps(visible, sort_keys=True, ensure_ascii=False).encode()).hexdigest())
         _a = str(metadata.get("avatar_url") or "")
         if _a:
             parts.append("a:" + _a)

@@ -76,6 +76,7 @@ class ParserManager:
         primary: BaseVideoParser,
         session: aiohttp.ClientSession,
         url: str,
+        detail: bool = False,
     ) -> Tuple[Optional[BaseVideoParser], Any]:
         """调用主解析器；主解析器 SkipParse 时按注册顺序回落到其它候选解析器。
 
@@ -94,7 +95,10 @@ class ParserManager:
         while parser is not None:
             tried.add(id(parser))
             try:
-                result = await parser.parse(session, url)
+                if detail and getattr(parser, "supports_detail", False):
+                    result = await parser.parse_detail(session, url)
+                else:
+                    result = await parser.parse(session, url)
                 return parser, result
             except SkipParse as skip:
                 logger.debug(
@@ -147,6 +151,7 @@ class ParserManager:
         text: str,
         session: aiohttp.ClientSession,
         links_with_parser: Optional[List[Tuple[str, BaseVideoParser]]] = None,
+        detail: bool = False,
     ) -> List[Dict[str, Any]]:
         """解析文本中的所有链接
 
@@ -173,7 +178,7 @@ class ParserManager:
             已在 _parse_with_fallback 内部完成，这里仅透传。
             """
             try:
-                effective, result = await self._parse_with_fallback(primary, session, url)
+                effective, result = await self._parse_with_fallback(primary, session, url, detail=detail)
                 return effective, result
             except asyncio.CancelledError:
                 raise

@@ -46,6 +46,10 @@ class MediaMetadata(TypedDict, total=False):
     timelength_ms: int
     available_length_ms: int
     hot_comments: List[Dict[str, Any]]
+    product_info: Dict[str, Any]
+    github_info: Dict[str, Any]
+    detail_text: str
+    ai_summary: str
 
     use_image_proxy: bool
     use_video_proxy: bool
