@@ -87,6 +87,31 @@ def plugin(manager, *, outputs=True):
 
 
 class TestMessageCommands(unittest.IsolatedAsyncioTestCase):
+    async def test_detail_command_dispatches_and_has_its_own_link_quota(self):
+        manager = ParseRecordManager(same_link_max_count=1, same_link_window_seconds=3600)
+        instance = plugin(manager)
+        instance.config_manager.admin.detail_parse_keyword = "详细解析"
+        parser = SimpleNamespace(name="github", supports_detail=True)
+        url = "https://github.com/acme/demo"
+        instance._try_extract_reply_links = lambda event: ([(url, parser)], "quoted")
+        manager.filter_links([(url, parser)], user_key="other")
+        instance.config_manager.trigger.should_parse = lambda text: False
+        message = event("详细解析")
+        message.send = AsyncMock()
+        message.plain_result = lambda text: text
+        await load_handler()(instance, message)
+        self.assertTrue(instance.parser_manager.parse_text.await_args.kwargs["detail"])
+
+    async def test_detail_command_rejects_unsupported_quoted_links(self):
+        instance = plugin(ParseRecordManager())
+        instance.config_manager.admin.detail_parse_keyword = "详细解析"
+        message = event("详细解析")
+        message.send = AsyncMock()
+        message.plain_result = lambda text: text
+        await load_handler()(instance, message)
+        instance.parser_manager.parse_text.assert_not_awaited()
+        self.assertIn("支持详细解析", message.send.call_args.args[0])
+
     async def test_force_short_link_does_not_consume_canonical_url_quota(self):
         with tempfile.TemporaryDirectory() as directory:
             manager = ParseRecordManager(record_file=str(Path(directory) / "records.json"),

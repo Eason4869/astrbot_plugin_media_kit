@@ -264,6 +264,12 @@ class MetadataTranslator:
             )
         return self._parse_translation_response(text, {item["id"] for item in items})
 
+    async def complete_payload(self, payload: Dict[str, Any], event_context: Dict[str, Any]) -> str:
+        """Shared connection adapter; callers own their prompts and deadlines."""
+        if self._use_astrbot_provider():
+            return await self._post_astrbot_completion(payload, event_context)
+        return await self.llm_client.complete(payload, timeout_seconds=30)
+
     def _build_payload(
         self,
         items: List[Dict[str, str]],

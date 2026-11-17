@@ -13,6 +13,8 @@ async def _download_one(url: str, cache_dir: Path, metadata: Dict[str, Any]) -> 
     from PIL import Image
     from io import BytesIO
     import uuid
+    from ..downloader.security import create_public_only_connector, safe_request
+    from ..downloader.budget import DEFAULT_IMAGE_MAX_BYTES, MAX_IMAGE_PIXELS
 
     if url.startswith("//"):
         url = "https:" + url
@@ -42,12 +44,22 @@ async def _download_one(url: str, cache_dir: Path, metadata: Dict[str, Any]) -> 
 
     try:
         timeout = aiohttp.ClientTimeout(total=20, connect=8)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers, proxy=proxy) as resp:
+        connector = create_public_only_connector(trusted_proxy_urls=[proxy] if proxy else [])
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+            resp = await safe_request(session, "GET", url, headers=headers, proxy=proxy)
+            try:
                 if resp.status != 200:
                     logger.debug(f"rika 下载失败: HTTP {resp.status}: {url}")
                     return None
-                raw = await resp.read()
+                chunks, total = [], 0
+                async for chunk in resp.content.iter_chunked(65536):
+                    total += len(chunk)
+                    if total > DEFAULT_IMAGE_MAX_BYTES:
+                        raise ValueError("卡片图片超过下载大小限制")
+                    chunks.append(chunk)
+                raw = b"".join(chunks)
+            finally:
+                resp.release()
     except Exception as e:
         logger.debug(f"rika 下载失败: {url}, 错误: {e}")
         return None
@@ -56,6 +68,8 @@ async def _download_one(url: str, cache_dir: Path, metadata: Dict[str, Any]) -> 
         return None
     try:
         with Image.open(BytesIO(raw)) as image:
+            if image.width * image.height > MAX_IMAGE_PIXELS:
+                raise ValueError("卡片图片超过像素限制")
             image.verify()
     except Exception as e:
         logger.debug(f"rika 响应非图片: {url}, {e}")

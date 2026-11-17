@@ -116,6 +116,7 @@ def format_archive_metadata(
     _append_field(lines, "作者", metadata.get("author"))
     _append_field(lines, "发布时间", metadata.get("timestamp"))
     _append_field(lines, "简介", metadata.get("desc"))
+    _append_field(lines, "详细解析", metadata.get("detail_text"))
     _append_field(lines, "原始链接", metadata.get("url") or metadata.get("source_url"))
     _append_field(lines, "访问状态", metadata.get("access_status"))
     _append_field(lines, "访问提示", metadata.get("access_message"))
@@ -183,6 +184,9 @@ def _build_archive_details(
         "author",
         "timestamp",
         "desc",
+        "detail_text",
+        "github_info",
+        "product_info",
         "url",
         "source_url",
         "access_status",

@@ -23,6 +23,8 @@ from .parser.platform import (
     TwitterParser,
     PixivParser,
     BiliLiveParser,
+    GitHubParser,
+    JDParser,
 )
 from .translation.provider_defs import (
     LLM_PROVIDER_DEFAULTS,
@@ -55,6 +57,8 @@ PARSER_OUTPUT_KEYS = (
     "twitter",
     "pixiv",
     "live",
+    "github",
+    "jd",
 )
 
 OUTPUT_MODE_DISABLED = "关闭"
@@ -435,6 +439,8 @@ class ParseRateLimitConfig:
 
 @dataclass
 class ProxyConfig:
+    github_use_parse_proxy: bool = False
+    github_use_image_proxy: bool = True
     address: str = ""
     xiaoheihe_use_video_proxy: bool = True
     steam_use_parse_proxy: bool = False
@@ -502,7 +508,21 @@ class TranslationConfig:
 
 
 @dataclass
+class GitHubConfig:
+    token: str = ""
+    summary_enabled: bool = True
+    summary_provider_id: str = ""
+
+
+@dataclass
+class JDConfig:
+    browser_fallback: bool = True
+    browser_path: str = ""
+
+
+@dataclass
 class AdminConfig:
+    detail_parse_keyword: str = "详细解析"
     clean_cache_keyword: str = "清理媒体"
     status_keyword: str = "解析状态"
     force_parse_keyword: str = "强制解析"
@@ -614,6 +634,18 @@ class ConfigManager:
         self._enable_live = self._parser_enabled("live")
 
         # --- message ---
+        github_raw = self._as_dict(config.get("github"))
+        jd_raw = self._as_dict(config.get("jd"))
+        self.jd = JDConfig(
+            browser_fallback=self._parse_bool(jd_raw.get("browser_fallback", True), True, "jd.browser_fallback"),
+            browser_path=str(jd_raw.get("browser_path", "") or "").strip(),
+        )
+        self.github = GitHubConfig(
+            token=str(github_raw.get("token", "") or "").strip(),
+            summary_enabled=self._parse_bool(github_raw.get("summary_enabled", True), True, "github.summary_enabled"),
+            summary_provider_id=str(github_raw.get("summary_provider_id", "") or "").strip(),
+        )
+
         message_raw = self._as_dict(config.get("message"))
         opening = self._as_dict(message_raw.get("opening"))
         aggregation = self._as_dict(message_raw.get("packing"))
@@ -1079,7 +1111,10 @@ class ConfigManager:
         proxy_raw = self._as_dict(config.get("proxy"))
         steam_proxy = self._as_dict(proxy_raw.get("steam"))
         twitter_proxy = self._as_dict(proxy_raw.get("twitter"))
+        github_proxy = self._as_dict(proxy_raw.get("github"))
         self.proxy = ProxyConfig(
+            github_use_parse_proxy=self._parse_bool(github_proxy.get("parse", False), False, "proxy.github.parse"),
+            github_use_image_proxy=self._parse_bool(github_proxy.get("image", True), True, "proxy.github.image"),
             address=str(proxy_raw.get("address", "") or "").strip(),
             xiaoheihe_use_video_proxy=self._parse_bool(
                 proxy_raw.get("xiaoheihe_video", True),
@@ -1131,6 +1166,7 @@ class ConfigManager:
         # --- admin ---
         admin_raw = self._as_dict(config.get("admin"))
         self.admin = AdminConfig(
+            detail_parse_keyword=str(admin_raw.get("detail_parse_keyword", "详细解析") or "").strip(),
             clean_cache_keyword=str(
                 admin_raw.get("clean_cache_keyword", "清理媒体") or "清理媒体"
             ).strip(),
@@ -1199,6 +1235,7 @@ class ConfigManager:
             ("解析状态", self.admin.status_keyword),
             ("强制解析", self.admin.force_parse_keyword),
             ("引用归档", self.message.archive.command),
+            ("详细解析", self.admin.detail_parse_keyword),
         ]
         seen: Dict[str, str] = {}
         for label, keyword in ordered:
@@ -1215,6 +1252,8 @@ class ConfigManager:
                     self.admin.force_parse_keyword = ""
                 elif label == "引用归档":
                     self.message.archive.command = ""
+                elif label == "详细解析":
+                    self.admin.detail_parse_keyword = ""
                 continue
             seen[keyword] = label
 
@@ -1232,6 +1271,8 @@ class ConfigManager:
             "xiaoheihe": "小黑盒",
             "steam": "Steam",
             "twitter": "Twitter/X",
+            "github": "GitHub",
+            "jd": "京东",
             "pixiv": "Pixiv",
             "live": "B站直播",
         }
@@ -1304,6 +1345,15 @@ class ConfigManager:
             parsers.append(XiaohongshuParser(hot_comment_count=xhs_hc))
         if self._enable_xianyu:
             parsers.append(XianyuParser())
+        if self._parser_enabled("github"):
+            parsers.append(GitHubParser(
+                token=self.github.token,
+                use_parse_proxy=self.proxy.github_use_parse_proxy,
+                use_image_proxy=self.proxy.github_use_image_proxy,
+                proxy_url=proxy_addr,
+            ))
+        if self._parser_enabled("jd"):
+            parsers.append(JDParser(browser_fallback=self.jd.browser_fallback, browser_path=self.jd.browser_path))
         if self._enable_toutiao:
             _, toutiao_rich_enabled = self.parser_output.output_for_controller(
                 "toutiao"

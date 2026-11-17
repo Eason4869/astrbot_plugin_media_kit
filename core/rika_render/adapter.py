@@ -25,6 +25,8 @@ PLATFORM_DISPLAY_NAMES: Dict[str, str] = {
     "pixiv": "Pixiv",
     "toutiao": "今日头条",
     "xianyu": "闲鱼",
+    "github": "GitHub",
+    "jd": "京东",
     "xiaoheihe": "小黑盒",
     "youtube": "YouTube",
     "live": "B站直播",
@@ -241,6 +243,12 @@ def build_parse_result(
         extra["content_type"] = "视频"
 
     # 渲染器需要的统计/在线/限制提示字段
+    if platform_name == "jd":
+        extra["content_type"] = "商品"
+    elif platform_name == "github":
+        kind = (metadata.get("github_info") or {}).get("kind", "repository")
+        extra["content_type"] = {"repository": "仓库", "issue": "Issue", "pull": "PR", "release": "Release"}.get(kind, "GitHub")
+
     stats_line = str(metadata.get("stats_line") or "").strip()
     if stats_line:
         extra["stats_line"] = stats_line

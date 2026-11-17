@@ -99,7 +99,7 @@ _STAT_LABELS = {
 
 
 # 卡片样式版本：视觉样式变化时 +1，使已缓存的旧卡片失效并重新渲染
-_CARD_STYLE_VERSION = "14"
+_CARD_STYLE_VERSION = "15"
 
 
 def strip_emoji(text: str | None) -> str:
@@ -262,6 +262,8 @@ class _L:
 # ============================ 主题与平台配色 ============================
 
 PLATFORM_COLORS = {
+    "github": "#A5B4FC",
+    "jd": "#E4393C",
     "bilibili": "#FB7299",
     "douyin": "#2EF2EE",
     "kuaishou": "#FF7E00",
@@ -962,7 +964,7 @@ class ShareCardRenderer:
         gap = _L.GRID_GAP
 
         # ================= 数据准备 =================
-        is_video_hero = images.get("hero") is not None
+        is_video_hero = images.get("hero") is not None and result.content_type == "视频"
         hero = images.get("hero")
         grid = list(images.get("grid") or [])
         if hero is None and grid:
@@ -1564,7 +1566,7 @@ class ShareCardRenderer:
         if dur := result.extra.get("duration"):
             stats.insert(0, ("时长：", fmt_duration(dur)))
         return {
-            "is_video_hero": images.get("hero") is not None,
+            "is_video_hero": images.get("hero") is not None and result.content_type == "视频",
             "hero": hero,
             "grid": grid,
             "platform_text": result.platform.display_name,
@@ -1931,7 +1933,7 @@ class ShareCardRenderer:
         right_x = pad + cover_w + 26
         right_w = inner_w - cover_w - 26 if d["hero"] else inner_w
 
-        title_font = self._font(33, bold=True)
+        title_font = self._font(33 if d["hero"] else _L.F_TITLE, bold=True)
         title_lines = (
             self._fit_lines(d["title"], title_font, right_w, 4 if d["hero"] else 3)
             if d["title"] else []
@@ -1979,7 +1981,7 @@ class ShareCardRenderer:
             except Exception:
                 ph = self._fallback_cover(cover_w, cover_h, theme, accent_rgb, 20)
                 canvas.alpha_composite(ph, (pad, y))
-            if d["is_video_hero"]:
+            if d["is_video_hero"] and self.show_play_button:
                 r_ = 38
                 cx, cy = pad + cover_w // 2, y + cover_h // 2
                 self._glass(canvas, (cx - r_, cy - r_, cx + r_, cy + r_), r_,
