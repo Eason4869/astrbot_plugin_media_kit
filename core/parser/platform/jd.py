@@ -13,10 +13,11 @@ from .base import BaseVideoParser
 from ..utils import recall_expanded_url, remember_expanded_url
 
 
-ITEM_HOSTS = {"item.jd.com", "item.m.jd.com"}
-SHORT_HOSTS = {"u.jd.com", "3.cn", "j.jd.com"}
+ITEM_HOSTS = {"item.jd.com", "item.m.jd.com", "item.jd.hk", "mitem.jd.hk"}
+SHORT_HOSTS = {"u.jd.com", "3.cn", "j.jd.com", "3.jd.hk"}
 REDIRECT_HOSTS = ITEM_HOSTS | SHORT_HOSTS | {"union-click.jd.com", "wq.jd.com"}
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/142.0.0.0 Safari/537.36"
+MOBILE_UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/142.0.0.0 Mobile Safari/537.36"
 
 
 class UnsafeProductURLError(RuntimeError):
@@ -118,7 +119,88 @@ class ProductHTML(HTMLParser):
             self.shop.append(data)
 
 
+def _page_object(page, name):
+    """Read JSON-valued root properties; tolerate only a root trailing comma.
+
+    Mobile JD objects contain a JS-style trailing comma. Decoding each root
+    value avoids evaluating script or globally rewriting quoted string data.
+    """
+    match = re.search(r"\bwindow\." + re.escape(name) + r"\s*=\s*\(?\s*\{", page)
+    if not match:
+        return {}
+    decoder = json.JSONDecoder()
+    skip_space = re.compile(r"\s*").match
+    position = match.end()
+    result = {}
+    try:
+        while position < len(page):
+            position = skip_space(page, position).end()
+            if page[position] == "}":
+                return result
+            key, position = decoder.raw_decode(page, position)
+            if not isinstance(key, str):
+                return {}
+            position = skip_space(page, position).end()
+            if page[position] != ":":
+                return {}
+            position += 1
+            position = skip_space(page, position).end()
+            value, position = decoder.raw_decode(page, position)
+            result[key] = value
+            position = skip_space(page, position).end()
+            if page[position] == ",":
+                position += 1
+            elif page[position] == "}":
+                return result
+            else:
+                return {}
+    except (ValueError, IndexError, TypeError):
+        return {}
+    return {}
+
+
+def _mobile_product(page, expected_id):
+    item = _page_object(page, "_itemOnly").get("item") or {}
+    info = _page_object(page, "_itemInfo")
+    product = info.get("product") or {}
+    if not isinstance(item, dict) or not isinstance(product, dict):
+        return None
+    identifiers = [str(data.get("skuId") or "") for data in (item, product) if data.get("skuId")]
+    if not identifiers:
+        return None
+    sku = identifiers[0]
+    if not sku.isdigit() or any(value != sku for value in identifiers):
+        raise RuntimeError("京东移动页的商品编号不匹配")
+    if expected_id and expected_id.isdigit() and sku != expected_id:
+        raise RuntimeError("京东返回的商品编号与链接不匹配")
+    title = str(product.get("skuName") or item.get("skuName") or "").strip()
+    if not title:
+        raise RuntimeError("京东移动页未提供商品名称")
+    floor = info.get("priceFloor") or {}
+    common = info.get("commonInfo") or {}
+    extension = floor.get("ext") or {}
+    urge_login = common.get("urgeLogin") in {True, "true", "1", 1}
+    price = "暂未获取"
+    if not urge_login:
+        for candidate in (extension.get("jdPrice"), floor.get("price")):
+            text = str(candidate or "")
+            if re.fullmatch(r"\d+(?:\.\d{1,2})?", text):
+                price = "¥" + text
+                break
+    masked = any("?" in str(value) for value in (floor.get("price"), extension.get("jdPrice")))
+    images = item.get("image") or [product.get("imageurl")]
+    if not isinstance(images, list):
+        images = []
+    return {"sku": sku, "title": title, "shop": "", "price_text": price,
+            "price_status": "available" if price != "暂未获取" else "login_required" if urge_login or masked else "unavailable",
+            "main_images": list(dict.fromkeys(url for value in images if isinstance(value, str) and (url := image_url(value)))),
+            "detail_images": []}
+
+
 def extract_product(page, expected_id=""):
+    mobile = _mobile_product(page, expected_id)
+    if mobile:
+        return mobile
     matches = re.findall(r"\bskuid\s*:\s*['\"]?(\d+)", page, re.I)
     sku = matches[0] if matches else ""
     if expected_id and expected_id.isdigit() and sku and sku != expected_id:
@@ -183,9 +265,19 @@ class JDParser(BaseVideoParser):
         url = recall_expanded_url(session, url) or url
         for _ in range(6):
             if not trusted_navigation(url):
+                try:
+                    rejected = urlsplit(url)
+                    if (rejected.scheme in {"http", "https"} and not rejected.username
+                            and not rejected.password and rejected.port in {None, 80, 443}
+                            and ((rejected.hostname == "cfe.m.jd.com" and rejected.path.startswith("/privatedomain/risk_handler/"))
+                                 or rejected.hostname == "pc-frequent-pro.pf.jd.com")):
+                        raise UnsafeProductURLError("京东页面要求登录或人工验证，请稍后重试")
+                except ValueError:
+                    pass
                 raise UnsafeProductURLError("京东链接跳转到了不受信任的地址")
             parsed = urlsplit(url)
-            async with session.get(url, headers={"User-Agent": UA}, allow_redirects=False) as response:
+            user_agent = MOBILE_UA if parsed.hostname in {"item.m.jd.com", "mitem.jd.hk"} else UA
+            async with session.get(url, headers={"User-Agent": user_agent}, allow_redirects=False) as response:
                 if response.status in {301, 302, 303, 307, 308}:
                     location = response.headers.get("Location")
                     if not location:
@@ -225,19 +317,32 @@ class JDParser(BaseVideoParser):
         expected = identify(url)
         if expected is None:
             raise RuntimeError("不支持的京东链接")
+        expected_id = expected
         try:
             final_url, page = await self._fetch_page(session, url)
-            product = extract_product(page, expected)
+            resolved_id = identify(final_url) or ""
+            expected_id = expected if expected.isdigit() else resolved_id
+            try:
+                product = extract_product(page, expected_id)
+            except RuntimeError:
+                host = urlsplit(final_url).hostname
+                if not expected_id.isdigit() or host in {"item.m.jd.com", "mitem.jd.hk"}:
+                    raise
+                mobile_host = "mitem.jd.hk" if host == "item.jd.hk" else "item.m.jd.com"
+                final_url, page = await self._fetch_page(session, f"https://{mobile_host}/product/{expected_id}.html")
+                product = extract_product(page, expected_id)
         except UnsafeProductURLError:
             raise
         except (RuntimeError, OSError, asyncio.TimeoutError, aiohttp.ClientError):
             if not self.browser_fallback:
                 raise
             from .product_browser import ProductBrowserClient
-            final_url, page = await ProductBrowserClient(executable=self.browser_path).fetch_page(url, expected)
-            product = extract_product(page, expected)
+            final_url, page = await ProductBrowserClient(executable=self.browser_path).fetch_page(url, expected_id)
+            product = extract_product(page, expected_id or identify(final_url) or "")
         images = list(dict.fromkeys(product["main_images"] + product["detail_images"]))
         desc = [f"参考价格：{product['price_text']}"]
+        if product.get("price_status") == "login_required":
+            desc.append("价格获取：页面要求登录查看完整价格")
         if product["shop"]:
             desc.append("店铺：" + product["shop"])
         if detail:
@@ -253,4 +358,5 @@ class JDParser(BaseVideoParser):
                 "card_cover_urls": [[image] for image in cover],
                 "image_headers": {"Referer": final_url, "User-Agent": UA},
                 "product_info": {"sku": product["sku"], "price_text": product["price_text"],
+                                 "price_status": product.get("price_status", "available" if product["price_text"] != "暂未获取" else "unavailable"),
                                  "image_count": len(images), "detail_image_count": len(product["detail_images"])}}

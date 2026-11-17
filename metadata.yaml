@@ -15,8 +15,8 @@ desc: |
   - 🍪 B站 Cookie 高画质解析与管理员协助登录
   - 🔁 媒体中转模式、消息打包、文本翻译、热评
   - 🆕 强制解析、解析状态查询、可选限流提示与多链接进度
-  - 🆕 GitHub 公开资源卡片、独立代理与按需 AI 摘要；京东商品卡片与详细多图
-version: v1.3.0
+  - 🆕 GitHub 自动卡片、配图及 AI 摘要，独立代理；京东商品卡片、香港短链与详细多图
+version: v1.3.1
 astrbot_version: ">=4.25.0"
 author: Eason4869
 repo: https://github.com/Eason4869/astrbot_plugin_media_kit

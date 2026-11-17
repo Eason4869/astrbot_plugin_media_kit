@@ -1,6 +1,7 @@
 """Public GitHub parsing, detail boundaries and anonymous/proxy behavior."""
 import asyncio
 import json
+import aiohttp
 import unittest
 from unittest.mock import AsyncMock
 
@@ -16,11 +17,38 @@ REPO = {"full_name": "acme/demo", "name": "demo", "private": False,
 
 
 class TestGitHub(unittest.IsolatedAsyncioTestCase):
+    async def test_optional_readme_timeout_preserves_card_without_fake_summary_source(self):
+        parser = GitHubParser()
+        parser._get = AsyncMock(side_effect=[REPO, asyncio.TimeoutError()])
+        result = await parser.parse(None, REPO["html_url"])
+        self.assertEqual(result["title"], "acme/demo")
+        self.assertNotIn("error", result)
+        self.assertEqual(result["detail_text"], "")
+        self.assertIn("README 暂未获取", result["desc"])
+
+    async def test_optional_issue_and_pr_requests_preserve_original_body(self):
+        for path, kind in (("issues/1", "issue"), ("pull/2", "pull")):
+            with self.subTest(kind=kind):
+                parser = GitHubParser()
+                parser._get = AsyncMock(side_effect=[REPO,
+                    {"title": "Known facts", "body": "Original body", "comments": 1, "state": "open"},
+                    aiohttp.ClientConnectionError("disconnected")])
+                result = await parser.parse(None, "https://github.com/acme/demo/" + path)
+                self.assertIn("Known facts", result["title"])
+                self.assertIn("Original body", result["detail_text"])
+                self.assertNotIn("error", result)
+
+    async def test_optional_enrichment_does_not_swallow_cancellation(self):
+        parser = GitHubParser()
+        parser._get = AsyncMock(side_effect=[REPO, asyncio.CancelledError()])
+        with self.assertRaises(asyncio.CancelledError):
+            await parser.parse(None, REPO["html_url"])
+
     async def test_issue_url_pointing_at_pr_has_real_merge_state(self):
         parser = GitHubParser()
         parser._get = AsyncMock(side_effect=[REPO,
             {"pull_request": {"url": "https://api.github.com/repos/acme/demo/pulls/2"}},
-            {"title": "Fix", "state": "closed", "merged": True}])
+            {"title": "Fix", "state": "closed", "merged": True}, []])
         result = await parser.parse(None, "https://github.com/acme/demo/issues/2")
         self.assertEqual(result["github_info"]["kind"], "pull")
         self.assertIn("已合并", result["desc"])
@@ -63,14 +91,18 @@ class TestGitHub(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(parser.extract_links("看 https://github.com/acme/demo，"),
                          ["https://github.com/acme/demo"])
 
-    async def test_default_card_does_not_fetch_readme(self):
+    async def test_default_link_fetches_images_and_summary_source_without_long_text(self):
         parser = GitHubParser()
-        parser._get = AsyncMock(return_value=REPO)
+        parser._get = AsyncMock(side_effect=[REPO,
+            {"path": "README.md", "encoding": "none", "content": "Useful project\n![screen](screen.png)"}])
         result = await parser.parse(None, REPO["html_url"])
         self.assertIn("42", result["desc"])
-        self.assertEqual(result["image_urls"], [])
-        self.assertEqual(parser._get.await_count, 1)
+        self.assertEqual(result["image_urls"], [["https://raw.githubusercontent.com/acme/demo/main/screen.png"]])
+        self.assertIn("Useful project", result["detail_text"])
+        self.assertFalse(result["detail_text_visible"])
+        self.assertEqual(parser._get.await_count, 2)
         self.assertEqual(result["github_info"]["kind"], "repository")
+        self.assertFalse(parser.supports_detail)
 
     async def test_private_repo_rejected_before_details(self):
         parser = GitHubParser(token="test-token")
@@ -89,7 +121,7 @@ class TestGitHub(unittest.IsolatedAsyncioTestCase):
                 return Response({**REPO, "private": self.private})
         parser = GitHubParser(token="privileged-test-token")
         session = VisibilitySession()
-        await parser.parse(session, REPO["html_url"])
+        await parser._get(session, "/repos/acme/demo")
         with self.assertRaisesRegex(RuntimeError, "公开"):
             await parser.parse_detail(session, REPO["html_url"])
         self.assertEqual(len(parser._cache), 0)
@@ -117,7 +149,7 @@ class TestGitHub(unittest.IsolatedAsyncioTestCase):
     async def test_readme_relative_images_and_badges(self):
         parser = GitHubParser(use_parse_proxy=True, use_image_proxy=True, proxy_url="http://127.0.0.1:7890")
         parser._get = AsyncMock(side_effect=[REPO, {"path": "docs/README.md", "encoding": "base64",
-            "content": __import__("base64").b64encode(b"# Demo\n![screen](../images/demo.png)\n![badge](https://img.shields.io/a)").decode()}])
+            "content": __import__("base64").b64encode(b"# Demo\n![screen](../images/demo.png)\n![badge](https://img.shields.io/a)\n![stats](https://api.star-history.com/svg?repos=a/b)\n![sponsor](https://sponsors.example.test/?v=1)\n![label](https://vendor.test/status.svg)").decode()}])
         result = await parser.parse_detail(None, REPO["html_url"])
         self.assertEqual(result["image_urls"], [["https://raw.githubusercontent.com/acme/demo/main/images/demo.png"]])
         self.assertTrue(result["use_image_proxy"])

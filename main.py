@@ -1167,7 +1167,10 @@ class VideoParserPlugin(Star):
             if not has_valid_metadata:
                 if detail_requested:
                     await event.send(event.plain_result("当前输出模式没有可发送的详情；请检查平台的文本／富媒体开关。"))
-                elif any(metadata.get("platform") in {"github", "jd"}
+                elif any(metadata.get("platform") == "github"
+                         and not metadata.get("error") for metadata in metadata_list):
+                    await event.send(event.plain_result("GitHub 已自动解析，但正文没有可发送的图片；可开启文本元数据查看卡片和 AI 摘要。"))
+                elif any(metadata.get("platform") == "jd"
                          and not metadata.get("error") for metadata in metadata_list):
                     await event.send(event.plain_result("当前为仅富媒体模式，普通链接不发送卡片；可引用链接发送详细解析，或开启文本元数据。"))
                 if cfg.admin.debug_mode:
@@ -1199,7 +1202,7 @@ class VideoParserPlugin(Star):
                     translation_task=translation_task,
                     translation_metadata_list=translation_metadata_list,
                 )
-                if detail_requested and cfg.github.summary_enabled:
+                if not zip_requested and cfg.github.summary_enabled:
                     for metadata in metadata_list:
                         if (metadata.get("platform") != "github" or metadata.get("error")
                                 or not metadata.get("_enable_text_metadata", True)):
@@ -1209,7 +1212,7 @@ class VideoParserPlugin(Star):
                             metadata["ai_summary"] = summary
                             await event.send(event.plain_result(f"AI 摘要 · {metadata.get('title', 'GitHub')}\n{summary}"))
                         elif metadata.get("detail_text"):
-                            await event.send(event.plain_result("AI 摘要暂不可用，以上为已获取的原始详情。"))
+                            await event.send(event.plain_result("AI 摘要暂不可用，已保留解析结果。"))
                 if emoji_cfg.feedback_enabled:
                     await mark_parse_success(event, emoji_cfg.success_emoji_id)
             finally:

@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import AsyncMock, patch
 import support
@@ -14,7 +15,73 @@ PAGE = '''<html><head><title>测试手机【图片 价格】-京东</title>
 <div class="recommend"><img src="//img10.360buyimg.com/other.jpg">价格1元</div></body></html>'''
 
 
+def mobile_page(price="3689.00", *, masked=False):
+    # Shape captured from the user's real Switch2 share, with a different variant first.
+    item = {"newColorSize": [{"skuId": "20341866190", "imagePath": "jfs/wrong-variant.jpg"}],
+            "skuId": "10235967540747", "skuName": "任天堂 港版Switch2国际多语言",
+            "image": ["jfs/switch2-main.jpg", "jfs/switch2-second.jpg"]}
+    info = {"product": {"skuId": item["skuId"], "skuName": item["skuName"]},
+            "priceFloor": {"price": "3??9" if masked else "font-encoded", "ext": {"jdPrice": "3??9" if masked else price}},
+            "commonInfo": {"urgeLogin": masked}, "taxinfov2": {"taxPrice": "335.70"}}
+    return '<script>window._itemOnly = (' + json.dumps({"item": item}, ensure_ascii=False) + ');\nwindow._itemInfo = (' + json.dumps(info, ensure_ascii=False)[:-1] + ',\n});</script>'
+
+
 class TestJD(unittest.IsolatedAsyncioTestCase):
+    async def test_official_risk_redirect_is_reported_without_following_it(self):
+        class Response:
+            status = 302
+            headers = {"Location": "https://cfe.m.jd.com/privatedomain/risk_handler/03101900/?returnurl=test"}
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                return False
+        session = type("Session", (), {})()
+        from unittest.mock import Mock
+        session.get = Mock(return_value=Response())
+        with self.assertRaisesRegex(RuntimeError, "人工验证"):
+            await JDParser()._fetch_page(session, "https://mitem.jd.hk/product/10235967540747.html")
+        self.assertEqual(session.get.call_count, 1)
+
+    def test_actual_hk_share_is_recognized(self):
+        parser = JDParser()
+        text = '【京东】https://3.jd.hk/104-oHdd 「港版Switch2国际多语言」 点击链接直接打开'
+        self.assertEqual(parser.extract_links(text), ["https://3.jd.hk/104-oHdd"])
+        self.assertTrue(parser.can_parse("https://mitem.jd.hk/product/10235967540747.html"))
+        for url in ("https://3.jd.hk.evil.test/104-oHdd", "https://user@3.jd.hk/104-oHdd"):
+            self.assertFalse(parser.can_parse(url))
+
+    def test_mobile_state_uses_target_sku_and_public_numeric_price(self):
+        result = extract_product(mobile_page(), "10235967540747")
+        self.assertEqual(result["sku"], "10235967540747")
+        self.assertEqual(result["price_text"], "¥3689.00")
+        self.assertEqual(len(result["main_images"]), 2)
+        self.assertFalse(any("wrong-variant" in u for u in result["main_images"]))
+
+    def test_mobile_mask_is_not_decoded_or_replaced_with_tax(self):
+        result = extract_product(mobile_page(masked=True), "10235967540747")
+        self.assertEqual(result["price_text"], "暂未获取")
+        self.assertEqual(result["price_status"], "login_required")
+
+    def test_mobile_identity_mismatch_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "不匹配"):
+            extract_product(mobile_page(), "10121597563336")
+
+    async def test_legacy_numeric_page_tries_same_sku_mobile_before_browser(self):
+        parser = JDParser(browser_fallback=False)
+        # Real Switch2 shape with the same ID as the requested numeric link.
+        source = mobile_page().replace("10235967540747", "10121597563336")
+        parser._fetch_page = AsyncMock(side_effect=[
+            ("https://item.jd.com/10121597563336.html", "<html>generic shell</html>"),
+            ("https://item.m.jd.com/product/10121597563336.html", source)])
+        result = await parser.parse(None, "https://item.jd.com/10121597563336.html")
+        self.assertEqual(parser._fetch_page.await_args_list[1].args[1], "https://item.m.jd.com/product/10121597563336.html")
+        self.assertEqual(result["product_info"]["sku"], "10121597563336")
+
+    async def test_short_link_checks_resolved_numeric_identity(self):
+        parser = JDParser(browser_fallback=False)
+        parser._fetch_page = AsyncMock(return_value=("https://mitem.jd.hk/product/999999.html", mobile_page()))
+        with self.assertRaisesRegex(RuntimeError, "不匹配"):
+            await parser.parse(None, "https://3.jd.hk/104-oHdd")
     async def test_untrusted_redirect_is_not_replayed_in_browser(self):
         from core.parser.platform.jd import UnsafeProductURLError
         parser = JDParser()
