@@ -18,6 +18,7 @@ import aiohttp
 from ...logger import logger
 
 from .base import BaseVideoParser
+from .xiaohongshu_browser import XiaohongshuBrowserClient
 from ..utils import build_request_headers, is_live_url, SkipParse
 from ...constants import Config
 
@@ -45,6 +46,7 @@ class XiaohongshuParser(BaseVideoParser):
     def __init__(self, hot_comment_count: int = 0):
         """初始化小红书解析器"""
         super().__init__("xiaohongshu")
+        self.browser_client = XiaohongshuBrowserClient()
         self.headers = {
             "User-Agent": ANDROID_UA,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -795,10 +797,10 @@ class XiaohongshuParser(BaseVideoParser):
             if original_page_url != preferred_page_url:
                 candidate_urls.append(original_page_url)
 
-            last_error: Optional[Exception] = None
             note_data = None
             hot_comments: List[Dict[str, Any]] = []
             selected_page_url = ""
+            browser_user_agent = ""
             for candidate_url in candidate_urls:
                 try:
                     logger.debug(f"[{self.name}] parse: 获取页面内容 {candidate_url}")
@@ -825,13 +827,25 @@ class XiaohongshuParser(BaseVideoParser):
                 except SkipParse:
                     raise
                 except Exception as exc:
-                    last_error = exc
                     logger.debug(
                         f"[{self.name}] 页面解析失败，尝试回退: {candidate_url}: {exc}"
                     )
 
             if note_data is None:
-                raise RuntimeError(f"无法获取小红书作品信息: {url}") from last_error
+                logger.info(f"[{self.name}] HTTP 页面未取得作品，尝试本机浏览器回退")
+                try:
+                    initial_state, browser_user_agent = await self.browser_client.fetch_note(preferred_page_url)
+                    note_data = self._parse_note_data(initial_state, preferred_page_url)
+                    if note_data.get("type") == "video" and not note_data.get("video_url"):
+                        raise RuntimeError("浏览器页面中缺少视频地址")
+                    if note_data.get("type") != "video" and not note_data.get("image_urls"):
+                        raise RuntimeError("浏览器页面中缺少图片地址")
+                    hot_comments = self._collect_hot_comments_from_state(initial_state)
+                    selected_page_url = preferred_page_url.replace("http://", "https://", 1)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    raise RuntimeError(f"无法获取小红书作品信息: {url}（{exc}）") from exc
 
             full_url = selected_page_url
             logger.debug(f"[{self.name}] parse: 笔记数据提取成功")
@@ -855,7 +869,7 @@ class XiaohongshuParser(BaseVideoParser):
                 author = f"(主页id:{author_id})"
 
             referer = full_url
-            user_agent = PC_UA if self._is_pc_url(full_url) else ANDROID_UA
+            user_agent = browser_user_agent or (PC_UA if self._is_pc_url(full_url) else ANDROID_UA)
             image_headers = build_request_headers(
                 is_video=False, referer=referer, user_agent=user_agent
             )
