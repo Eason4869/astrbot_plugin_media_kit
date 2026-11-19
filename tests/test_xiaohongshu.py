@@ -3,6 +3,8 @@ import json
 import os
 import sys
 import unittest
+import asyncio
+from unittest.mock import AsyncMock
 from urllib.parse import urlencode
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -100,6 +102,53 @@ class TestMiniappRedirect(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["image_urls"][0][0], "https://example.com/image.jpg")
         self.assertEqual(result["url"], SHORT_URL)
         self.assertEqual(result["image_headers"]["Referer"], DESKTOP_URL)
+
+    def browser_parser(self, error=None):
+        parser = XiaohongshuParser()
+        state = {"note": {"noteDetailMap": {"6afe68f60000000023013c6b": {"note": {
+            "type": "normal", "title": "浏览器读取的目标笔记",
+            "user": {"nickname": "作者", "userId": "author"},
+            "imageList": [{"urlDefault": "https://example.com/browser.jpg"}],
+        }}}}}
+        parser.browser_client = type("Browser", (), {})()
+        parser.browser_client.fetch_note = AsyncMock(return_value=(state, "Actual Browser UA"), side_effect=error)
+        return parser
+
+    async def test_http_login_page_falls_back_to_browser_and_returns_media(self):
+        parser = self.browser_parser()
+        session = LoginSession()
+        try:
+            result = await parser.parse(session, SHORT_URL)
+        except RuntimeError as exc:
+            self.fail(f"HTTP 登录页应通过浏览器回退取得作品，而不是失败: {exc}")
+        self.assertEqual(result["title"], "浏览器读取的目标笔记")
+        self.assertEqual(result["image_urls"][0][0], "https://example.com/browser.jpg")
+        self.assertEqual(result["image_headers"]["User-Agent"], "Actual Browser UA")
+
+    async def test_working_http_page_does_not_use_browser(self):
+        parser = self.browser_parser()
+        result = await parser.parse(HttpSession(), SHORT_URL)
+        self.assertEqual(result["title"], "小程序卡片图文笔记")
+        parser.browser_client.fetch_note.assert_not_awaited()
+
+    async def test_missing_browser_error_remains_actionable(self):
+        parser = self.browser_parser(RuntimeError("请安装 Chromium / Chrome / Edge"))
+        with self.assertRaisesRegex(RuntimeError, "请安装 Chromium"):
+            await parser.parse(LoginSession(), SHORT_URL)
+
+    async def test_browser_cancellation_propagates(self):
+        parser = self.browser_parser(asyncio.CancelledError())
+        with self.assertRaises(asyncio.CancelledError):
+            await parser.parse(LoginSession(), SHORT_URL)
+
+
+class LoginSession(HttpSession):
+    def get(self, url, **kwargs):
+        if url == DESKTOP_URL:
+            return FakeResponse(text_body='<title>你访问的页面不见了</title><script>window.__INITIAL_STATE__ = {"feed":{}}</script>')
+        if url == CAPTCHA_URL:
+            return FakeResponse(text_body='<title>小红书</title>')
+        return super().get(url, **kwargs)
 
 
 if __name__ == "__main__":
