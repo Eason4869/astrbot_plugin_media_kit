@@ -191,7 +191,7 @@ class XiaohongshuParser(BaseVideoParser):
         except (TypeError, ValueError):
             return url
         for key, value in query:
-            if key == "originalUrl" and cls._is_trusted_xhs_url(value):
+            if key in {"originalUrl", "redirectPath"} and cls._is_trusted_xhs_url(value):
                 return value
         return url
 
@@ -226,6 +226,9 @@ class XiaohongshuParser(BaseVideoParser):
                     next_url = urljoin(current_url, redirect_url)
                     if not self._is_trusted_xhs_url(next_url):
                         raise RuntimeError("小红书短链重定向到非受信域名")
+                    note_url = self._recover_original_note_url(next_url)
+                    if note_url != next_url:
+                        return note_url
                     current_url = next_url
                     continue
                 if response.status < 400:
